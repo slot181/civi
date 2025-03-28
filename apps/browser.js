@@ -9,8 +9,16 @@ async function launchBrowser() {
     headless: 'new', // 使用无头模式
     args: [
       '--no-sandbox',
-      '--disable-setuid-sandbox'
-    ]
+      '--disable-setuid-sandbox',
+      '--disable-web-security', // 禁用网页安全策略，可能绕过CORS限制
+      '--disable-features=IsolateOrigins,site-per-process', // 禁用站点隔离
+      '--disable-site-isolation-trials',
+      '--ignore-certificate-errors', // 忽略证书错误
+      '--ignore-certificate-errors-spki-list',
+      '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' // 设置用户代理
+    ],
+    ignoreHTTPSErrors: true, // 忽略HTTPS错误
+    timeout: 30000 // 增加启动超时时间到30秒
   });
 }
 
@@ -21,17 +29,54 @@ async function launchBrowser() {
  * @param {number} timeout 超时时间（毫秒）
  * @returns {Promise<{success: boolean, title: string, error: string|null}>} 访问结果
  */
-async function visitUrl(page, url, timeout = 15000) {
+async function visitUrl(page, url, timeout = 30000) {
   try {
     console.log(`正在打开: ${url}`);
+    
+    // 设置请求拦截，可以修改请求头
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      // 修改请求头
+      const headers = request.headers();
+      headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+      headers['Accept-Language'] = 'en-US,en;q=0.9';
+      request.continue({ headers });
+    });
+    
+    // 尝试访问页面
     await page.goto(url, {
-      waitUntil: 'domcontentloaded', // 只等待DOM内容加载，不等待所有资源
+      waitUntil: 'networkidle2', // 等待网络空闲，更可靠但可能更慢
       timeout: timeout
     });
     
-    const title = await page.title();
-    console.log(`成功打开: ${url}`);
-    console.log(`页面标题: ${title}`);
+    // 等待页面加载
+    console.log('等待页面加载...');
+    try {
+      // 尝试等待body元素出现
+      await page.waitForSelector('body', { timeout: 5000 });
+      console.log('✓ 页面body元素已加载');
+    } catch (bodyError) {
+      console.warn('⚠️ 无法检测到body元素，但继续执行:', bodyError.message);
+    }
+    
+    // 获取页面标题
+    let title = '';
+    try {
+      title = await page.title();
+      console.log(`成功打开: ${url}`);
+      console.log(`页面标题: ${title}`);
+    } catch (titleError) {
+      console.warn('⚠️ 无法获取页面标题:', titleError.message);
+    }
+    
+    // 尝试获取页面内容
+    try {
+      const content = await page.content();
+      console.log(`页面内容长度: ${content.length} 字符`);
+      console.log(`页面内容片段: ${content.substring(0, 200)}...`);
+    } catch (contentError) {
+      console.warn('⚠️ 无法获取页面内容:', contentError.message);
+    }
     
     return {
       success: true,
@@ -39,7 +84,17 @@ async function visitUrl(page, url, timeout = 15000) {
       error: null
     };
   } catch (error) {
-    console.error(`打开 ${url} 时出错:`, error.message);
+    console.error(`❌ 打开 ${url} 时出错:`, error.message);
+    console.error('错误堆栈:', error.stack);
+    
+    // 尝试截图保存错误状态
+    try {
+      await page.screenshot({ path: 'navigation-error.png' });
+      console.log('已保存错误截图到 navigation-error.png');
+    } catch (screenshotError) {
+      console.error('保存错误截图失败:', screenshotError.message);
+    }
+    
     return {
       success: false,
       title: '',
@@ -58,80 +113,77 @@ async function loginToCivitai(page, email) {
   try {
     console.log('========== 开始执行登录流程 ==========');
     
-    // 等待页面完全加载
-    console.log('正在等待页面加载完成...');
-    await page.waitForSelector('body', { timeout: 10000 });
-    
-    // 获取页面HTML，帮助调试
-    const pageHTML = await page.content();
-    console.log('页面HTML片段:', pageHTML.substring(0, 500) + '...');
-    
-    // 尝试查找登录按钮
-    console.log('正在寻找登录按钮...');
-    
-    // 获取所有可能的登录按钮
-    const signInButtons = await page.evaluate(() => {
-      // 尝试多种选择器
-      const buttons = [
-        // 通过文本内容查找
-        ...Array.from(document.querySelectorAll('a, button')).filter(el =>
-          el.textContent && el.textContent.trim().toLowerCase() === 'sign in'),
-        // 通过href属性查找
-        ...Array.from(document.querySelectorAll('a[href*="login"]')),
-        // 通过rel属性查找
-        ...Array.from(document.querySelectorAll('a[rel="nofollow"]')),
-        // 通过data-button属性查找
-        ...Array.from(document.querySelectorAll('a[data-button="true"]'))
-      ];
-      
-      return buttons.map(button => ({
-        text: button.textContent.trim(),
-        outerHTML: button.outerHTML,
-        href: button.getAttribute('href'),
-        classes: button.getAttribute('class')
-      }));
-    });
-    
-    console.log('找到可能的登录按钮:', signInButtons.length);
-    signInButtons.forEach((btn, index) => {
-      console.log(`按钮 ${index + 1}:`, btn);
-    });
-    
-    // 尝试点击第一个找到的登录按钮
-    if (signInButtons.length > 0) {
-      const buttonSelector = signInButtons[0].href ?
-        `a[href="${signInButtons[0].href}"]` :
-        `a.${signInButtons[0].classes.split(' ')[0]}`;
-      
-      console.log('使用选择器:', buttonSelector);
-      await page.waitForSelector(buttonSelector, { timeout: 5000 });
-      console.log('✓ 找到登录按钮');
-      
-      // 点击"Sign In"按钮
-      console.log('正在点击登录按钮...');
-      await page.click(buttonSelector);
-      console.log('✓ 已点击登录按钮');
-    } else {
-      // 如果找不到登录按钮，尝试直接访问登录页面
-      console.log('未找到登录按钮，尝试直接访问登录页面...');
-      await page.goto('https://civitai.com/login?returnUrl=/', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000
+    // 直接访问登录页面，而不是尝试点击登录按钮
+    console.log('直接访问登录页面...');
+    try {
+      await page.goto('https://civitai.com/login', {
+        waitUntil: 'networkidle2',
+        timeout: 30000
       });
-      console.log('✓ 已直接访问登录页面');
+      console.log('✓ 已访问登录页面');
+    } catch (navError) {
+      console.error('❌ 访问登录页面失败:', navError.message);
+      
+      // 尝试截图保存错误状态
+      try {
+        await page.screenshot({ path: 'login-page-error.png' });
+        console.log('已保存登录页面错误截图到 login-page-error.png');
+      } catch (screenshotError) {
+        console.error('保存错误截图失败:', screenshotError.message);
+      }
+      
+      throw new Error('无法访问登录页面: ' + navError.message);
     }
     
-    // 等待登录弹窗加载
-    console.log('正在等待登录弹窗加载...');
-    await page.waitForSelector('#input_email', { timeout: 10000 });
-    console.log('✓ 登录弹窗已加载');
+    // 等待登录表单加载
+    console.log('正在等待登录表单加载...');
+    try {
+      await page.waitForSelector('#input_email', { timeout: 20000 });
+      console.log('✓ 登录表单已加载');
+    } catch (formError) {
+      console.error('❌ 等待登录表单超时:', formError.message);
+      
+      // 尝试获取当前页面信息
+      try {
+        const currentUrl = await page.url();
+        console.log('当前页面URL:', currentUrl);
+        
+        // 尝试获取页面内容
+        const pageContent = await page.content();
+        console.log('页面内容片段:', pageContent.substring(0, 500) + '...');
+        
+        // 尝试截图
+        await page.screenshot({ path: 'form-error.png', fullPage: true });
+        console.log('已保存表单错误截图到 form-error.png');
+        
+        // 尝试查找页面上的所有输入框
+        const inputs = await page.evaluate(() => {
+          return Array.from(document.querySelectorAll('input')).map(input => ({
+            id: input.id,
+            type: input.type,
+            name: input.name,
+            placeholder: input.placeholder,
+            visible: input.offsetParent !== null
+          }));
+        });
+        console.log('页面上的输入框:', inputs);
+      } catch (infoError) {
+        console.error('获取页面信息失败:', infoError.message);
+      }
+      
+      throw new Error('无法找到邮箱输入框: ' + formError.message);
+    }
     
-    // 获取登录弹窗HTML结构，帮助调试
-    const loginFormHTML = await page.evaluate(() => {
-      const form = document.querySelector('form');
-      return form ? form.outerHTML : '未找到登录表单';
-    });
-    console.log('登录表单HTML结构:', loginFormHTML);
+    // 获取登录表单HTML结构，帮助调试
+    try {
+      const loginFormHTML = await page.evaluate(() => {
+        const form = document.querySelector('form');
+        return form ? form.outerHTML : '未找到登录表单';
+      });
+      console.log('登录表单HTML结构:', loginFormHTML);
+    } catch (formHtmlError) {
+      console.warn('⚠️ 无法获取登录表单HTML:', formHtmlError.message);
+    }
     
     // 等待一下确保表单完全加载
     console.log('等待表单完全加载...');
@@ -241,64 +293,52 @@ async function runBrowserTest() {
       console.log(`  失败原因: ${request.failure().errorText}`);
     });
     
-    // 直接访问目标网站
-    console.log('\n正在访问 civitai.com...');
-    const targetUrl = 'https://civitai.com';
-    const targetResult = await visitUrl(page, targetUrl);
+    // 设置更多的页面选项
+    await page.setDefaultNavigationTimeout(60000); // 设置导航超时为60秒
+    await page.setDefaultTimeout(30000); // 设置默认超时为30秒
     
-    if (targetResult.success) {
-      console.log('✓ 成功打开 civitai.com');
-      console.log(`✓ 页面标题: ${targetResult.title}`);
+    // 禁用某些资源加载，提高性能
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      const resourceType = request.resourceType();
+      // 阻止加载图片、字体、媒体等资源，减少网络负载
+      if (['image', 'font', 'media'].includes(resourceType)) {
+        request.abort();
+      } else {
+        // 修改请求头
+        const headers = request.headers();
+        headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+        headers['Accept-Language'] = 'en-US,en;q=0.9';
+        request.continue({ headers });
+      }
+    });
+    
+    // 直接执行登录流程，不先访问主页
+    console.log('\n直接执行登录流程...');
+    
+    // 执行登录流程，使用测试邮箱
+    const testEmail = 'arena1516611@gmail.com';
+    console.log(`准备使用邮箱 ${testEmail} 执行登录流程`);
+    const loginResult = await loginToCivitai(page, testEmail);
+    
+    if (loginResult.success) {
+      console.log('✓ 登录流程执行成功');
       
-      // 获取页面基本信息
-      const pageInfo = await page.evaluate(() => {
+      // 获取登录后的页面状态
+      const postLoginInfo = await page.evaluate(() => {
         return {
           url: window.location.href,
-          readyState: document.readyState,
-          elementCount: document.querySelectorAll('*').length
+          title: document.title
         };
       });
-      console.log('页面信息:', pageInfo);
-      
-      // 执行登录流程，使用测试邮箱
-      const testEmail = 'arena1516611@gmail.com';
-      console.log(`\n准备使用邮箱 ${testEmail} 执行登录流程`);
-      const loginResult = await loginToCivitai(page, testEmail);
-      
-      if (loginResult.success) {
-        console.log('✓ 登录流程执行成功');
-        
-        // 获取登录后的页面状态
-        const postLoginInfo = await page.evaluate(() => {
-          return {
-            url: window.location.href,
-            title: document.title
-          };
-        });
-        console.log('登录后页面信息:', postLoginInfo);
-      } else {
-        console.log('❌ 登录流程执行失败:', loginResult.error);
-      }
-      
-      // 等待一段时间以便查看结果
-      console.log('等待5秒钟...');
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      console.log('登录后页面信息:', postLoginInfo);
     } else {
-      console.log('❌ 打开 civitai.com 失败');
-      console.log('  错误信息:', targetResult.error);
-      console.log('  这可能是由于网络限制或网站响应慢导致的');
-      console.log('  尝试使用代理或VPN可能会解决此问题');
-      
-      // 尝试获取当前页面信息，帮助调试
-      try {
-        const currentUrl = await page.url();
-        const pageTitle = await page.title();
-        console.log('当前页面URL:', currentUrl);
-        console.log('当前页面标题:', pageTitle);
-      } catch (infoError) {
-        console.error('获取页面信息失败:', infoError.message);
-      }
+      console.log('❌ 登录流程执行失败:', loginResult.error);
     }
+    
+    // 等待一段时间以便查看结果
+    console.log('等待5秒钟...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
     
     // 关闭浏览器
     console.log('\n正在关闭浏览器...');
