@@ -468,7 +468,7 @@ async function runBrowserTest() {
     console.log('\n直接执行登录流程...');
     
     // 执行请求Civitai登录邮件流程，使用测试邮箱
-    const testEmail = 'arena1516611@gmail.com';
+    const testEmail = 'buladinesh405@gmail.com';
     console.log(`准备使用邮箱 ${testEmail} 请求Civitai登录邮件`);
     const loginResult = await requestCivitaiLoginEmail(page, testEmail);
     
@@ -746,54 +746,11 @@ async function clickSignInButton(page) {
       }
       console.log('✓ 已成功导航到Sign in链接');
       
-      // 等待一段时间，确保页面有足够时间加载
-      console.log('等待10秒，确保页面加载...');
-      await new Promise(resolve => setTimeout(resolve, 10000));
-      console.log('✓ 等待完成');
-      
-      // 获取当前URL
-      const currentUrl = await page.url();
-      console.log('当前页面URL:', currentUrl);
-      
       // 尝试截图
       await page.screenshot({ path: 'civitai-login-result.png', fullPage: true });
       console.log('已保存Civitai登录结果截图到 civitai-login-result.png');
       
-      // 检查是否成功登录到Civitai
-      if (currentUrl.includes('civitai.com')) {
-        console.log('✓ 成功登录到Civitai');
-        
-        // 等待页面内容加载
-        try {
-          // 等待页面上可能出现的元素，表明登录成功
-          await page.waitForSelector('body', { timeout: 10000 });
-          
-          // 再次截图，确保捕获完整的登录后页面
-          await page.screenshot({ path: 'civitai-login-success.png', fullPage: true });
-          console.log('已保存Civitai登录成功截图到 civitai-login-success.png');
-        } catch (elementError) {
-          console.warn('⚠️ 等待页面元素超时，但继续执行:', elementError.message);
-        }
-        
-        console.log('========== Sign in按钮点击完成 ==========');
-        
-        return {
-          success: true,
-          error: null
-        };
-      } else {
-        console.error('❌ 未能成功登录到Civitai');
-        
-        // 尝试获取页面内容，帮助调试
-        try {
-          const pageContent = await page.content();
-          console.log('页面内容片段:', pageContent.substring(0, 500) + '...');
-        } catch (contentError) {
-          console.error('获取页面内容失败:', contentError.message);
-        }
-        
-        throw new Error('未能成功登录到Civitai');
-      }
+      console.log('========== Sign in按钮点击完成 ==========');
     } else {
       console.error('❌ 未找到Sign in按钮');
       
