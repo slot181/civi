@@ -486,16 +486,16 @@ async function runBrowserTest() {
       await new Promise(resolve => setTimeout(resolve, 30000));
       console.log('✓ 等待完成，开始执行邮箱登录');
       
-      // 执行邮箱登录流程
+      // 执行完整工作流程
       const mailUsername = 'slot@stonecoks.vip';
       const mailPassword = 'ww..MM123456789';
-      console.log(`准备使用账户 ${mailUsername} 登录邮箱`);
-      const mailLoginResult = await loginToServ00Mail(browser, mailUsername, mailPassword);
+      console.log(`准备使用账户 ${mailUsername} 执行完整工作流程`);
+      const workflowResult = await completeWorkflow(browser, mailUsername, mailPassword);
       
-      if (mailLoginResult.success) {
-        console.log('✓ 邮箱登录流程执行成功');
+      if (workflowResult.success) {
+        console.log('✓ 完整工作流程执行成功');
       } else {
-        console.log('❌ 邮箱登录流程执行失败:', mailLoginResult.error);
+        console.log('❌ 完整工作流程执行失败:', workflowResult.error);
       }
     } else {
       console.log('❌ 登录流程执行失败:', loginResult.error);
@@ -534,11 +534,369 @@ async function runBrowserTest() {
   }
 }
 
+/**
+ * 在邮箱中查找Civitai邮件
+ * @param {import('puppeteer').Page} page 页面实例
+ * @returns {Promise<{success: boolean, element: any|null, error: string|null}>} 查找结果
+ */
+async function findCivitaiEmail(page) {
+  try {
+    console.log('========== 开始查找Civitai邮件 ==========');
+    
+    // 等待邮件列表加载
+    console.log('正在等待邮件列表加载...');
+    try {
+      await page.waitForSelector('#messagelist tbody tr', { timeout: 20000 });
+      console.log('✓ 邮件列表已加载');
+    } catch (listError) {
+      console.error('❌ 等待邮件列表超时:', listError.message);
+      
+      // 尝试获取当前页面信息
+      try {
+        const currentUrl = await page.url();
+        console.log('当前页面URL:', currentUrl);
+        
+        // 尝试获取页面内容
+        const pageContent = await page.content();
+        console.log('页面内容片段:', pageContent.substring(0, 500) + '...');
+        
+        // 尝试截图
+        await page.screenshot({ path: 'mail-list-error.png', fullPage: true });
+        console.log('已保存邮件列表错误截图到 mail-list-error.png');
+      } catch (infoError) {
+        console.error('获取页面信息失败:', infoError.message);
+      }
+      
+      throw new Error('无法找到邮件列表: ' + listError.message);
+    }
+    
+    // 查找Civitai邮件
+    console.log('正在查找Civitai邮件...');
+    const emailElement = await page.evaluate(() => {
+      // 获取所有邮件行
+      const rows = Array.from(document.querySelectorAll('#messagelist tbody tr'));
+      
+      // 查找发件人为Civitai且主题包含"Sign in to Civitai"的邮件
+      for (const row of rows) {
+        const fromElement = row.querySelector('.rcmContactAddress');
+        const subjectElement = row.querySelector('.subject a span');
+        
+        if (fromElement && subjectElement) {
+          const from = fromElement.textContent.trim();
+          const subject = subjectElement.textContent.trim();
+          
+          if (from.includes('Civitai') && subject.includes('Sign in to Civitai')) {
+            // 返回邮件行的ID
+            return row.id;
+          }
+        }
+      }
+      
+      return null;
+    });
+    
+    if (emailElement) {
+      console.log(`✓ 找到Civitai邮件: ${emailElement}`);
+      console.log('========== Civitai邮件查找完成 ==========');
+      
+      return {
+        success: true,
+        element: emailElement,
+        error: null
+      };
+    } else {
+      console.error('❌ 未找到Civitai邮件');
+      
+      // 尝试截图
+      await page.screenshot({ path: 'no-civitai-email.png', fullPage: true });
+      console.log('已保存未找到邮件截图到 no-civitai-email.png');
+      
+      throw new Error('未找到Civitai邮件');
+    }
+  } catch (error) {
+    console.error('❌ 查找Civitai邮件过程中出错:', error.message);
+    
+    return {
+      success: false,
+      element: null,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * 打开Civitai邮件
+ * @param {import('puppeteer').Page} page 页面实例
+ * @param {string} emailId 邮件元素ID
+ * @returns {Promise<{success: boolean, error: string|null}>} 打开结果
+ */
+async function openCivitaiEmail(page, emailId) {
+  try {
+    console.log('========== 开始打开Civitai邮件 ==========');
+    
+    // 点击邮件
+    console.log(`正在点击邮件: ${emailId}...`);
+    await page.evaluate((id) => {
+      const emailRow = document.getElementById(id);
+      if (emailRow) {
+        // 找到邮件行中的主题链接并点击
+        const subjectLink = emailRow.querySelector('.subject a');
+        if (subjectLink) {
+          subjectLink.click();
+          return true;
+        }
+      }
+      return false;
+    }, emailId);
+    
+    // 等待邮件内容加载
+    console.log('正在等待邮件内容加载...');
+    try {
+      await page.waitForSelector('#messagebody', { timeout: 20000 });
+      console.log('✓ 邮件内容已加载');
+      
+      // 等待5秒，确保邮件内容完全加载
+      console.log('等待5秒，确保邮件内容完全加载...');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      console.log('✓ 等待完成');
+      
+      // 尝试截图
+      await page.screenshot({ path: 'civitai-email-opened.png', fullPage: true });
+      console.log('已保存邮件打开截图到 civitai-email-opened.png');
+      
+      console.log('========== Civitai邮件打开完成 ==========');
+      
+      return {
+        success: true,
+        error: null
+      };
+    } catch (contentError) {
+      console.error('❌ 等待邮件内容超时:', contentError.message);
+      
+      // 尝试获取当前页面信息
+      try {
+        const currentUrl = await page.url();
+        console.log('当前页面URL:', currentUrl);
+        
+        // 尝试获取页面内容
+        const pageContent = await page.content();
+        console.log('页面内容片段:', pageContent.substring(0, 500) + '...');
+        
+        // 尝试截图
+        await page.screenshot({ path: 'mail-content-error.png', fullPage: true });
+        console.log('已保存邮件内容错误截图到 mail-content-error.png');
+      } catch (infoError) {
+        console.error('获取页面信息失败:', infoError.message);
+      }
+      
+      throw new Error('无法加载邮件内容: ' + contentError.message);
+    }
+  } catch (error) {
+    console.error('❌ 打开Civitai邮件过程中出错:', error.message);
+    
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * 在邮件内容中找到并点击"Sign in"按钮
+ * @param {import('puppeteer').Page} page 页面实例
+ * @returns {Promise<{success: boolean, error: string|null}>} 点击结果
+ */
+async function clickSignInButton(page) {
+  try {
+    console.log('========== 开始查找并点击Sign in按钮 ==========');
+    
+    // 查找Sign in按钮
+    console.log('正在查找Sign in按钮...');
+    const signInButton = await page.evaluate(() => {
+      // 查找包含civitai.com/api/auth/callback/email的链接
+      const links = Array.from(document.querySelectorAll('a[href*="civitai.com/api/auth/callback/email"]'));
+      if (links.length > 0) {
+        // 返回第一个匹配的链接的href
+        return links[0].href;
+      }
+      return null;
+    });
+    
+    if (signInButton) {
+      console.log(`✓ 找到Sign in按钮: ${signInButton}`);
+      
+      // 点击Sign in按钮
+      console.log('正在点击Sign in按钮...');
+      
+      // 创建新标签页来打开链接
+      console.log('正在创建新标签页打开链接...');
+      const newPage = await page.browser().newPage();
+      await newPage.setViewport({ width: 1280, height: 800 });
+      
+      // 设置请求拦截
+      await setupRequestInterception(newPage, false);
+      
+      // 导航到Sign in链接
+      await newPage.goto(signInButton, {
+        waitUntil: 'networkidle2',
+        timeout: 60000
+      });
+      console.log('✓ 已导航到Sign in链接');
+      
+      // 等待Civitai页面加载
+      console.log('正在等待Civitai页面加载...');
+      try {
+        await newPage.waitForNavigation({ timeout: 60000 });
+        console.log('✓ 页面已导航');
+        
+        // 获取当前URL
+        const currentUrl = await newPage.url();
+        console.log('当前页面URL:', currentUrl);
+        
+        // 检查是否成功登录到Civitai
+        if (currentUrl.includes('civitai.com')) {
+          console.log('✓ 成功登录到Civitai');
+          
+          // 尝试截图
+          await newPage.screenshot({ path: 'civitai-login-success.png', fullPage: true });
+          console.log('已保存Civitai登录成功截图到 civitai-login-success.png');
+          
+          console.log('========== Sign in按钮点击完成 ==========');
+          
+          // 关闭新标签页
+          await newPage.close();
+          console.log('✓ 已关闭Civitai标签页');
+          
+          return {
+            success: true,
+            error: null
+          };
+        } else {
+          console.error('❌ 未能成功登录到Civitai');
+          
+          // 尝试截图
+          await newPage.screenshot({ path: 'civitai-login-failed.png', fullPage: true });
+          console.log('已保存Civitai登录失败截图到 civitai-login-failed.png');
+          
+          // 关闭新标签页
+          await newPage.close();
+          console.log('✓ 已关闭Civitai标签页');
+          
+          throw new Error('未能成功登录到Civitai');
+        }
+      } catch (navError) {
+        console.error('❌ 等待Civitai页面加载超时:', navError.message);
+        
+        // 尝试截图
+        await newPage.screenshot({ path: 'civitai-navigation-error.png', fullPage: true });
+        console.log('已保存Civitai导航错误截图到 civitai-navigation-error.png');
+        
+        // 关闭新标签页
+        await newPage.close();
+        console.log('✓ 已关闭Civitai标签页');
+        
+        throw new Error('等待Civitai页面加载超时: ' + navError.message);
+      }
+    } else {
+      console.error('❌ 未找到Sign in按钮');
+      
+      // 尝试截图
+      await page.screenshot({ path: 'no-sign-in-button.png', fullPage: true });
+      console.log('已保存未找到Sign in按钮截图到 no-sign-in-button.png');
+      
+      throw new Error('未找到Sign in按钮');
+    }
+  } catch (error) {
+    console.error('❌ 查找并点击Sign in按钮过程中出错:', error.message);
+    
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * 完成从邮箱登录到Civitai登录的完整工作流程
+ * @param {import('puppeteer').Browser} browser 浏览器实例
+ * @param {string} username 邮箱用户名
+ * @param {string} password 邮箱密码
+ * @returns {Promise<{success: boolean, error: string|null}>} 完整流程结果
+ */
+async function completeWorkflow(browser, username, password) {
+  try {
+    console.log('========== 开始执行完整工作流程 ==========');
+    
+    // 登录邮箱
+    console.log('正在登录邮箱...');
+    const mailLoginResult = await loginToServ00Mail(browser, username, password);
+    
+    if (!mailLoginResult.success) {
+      throw new Error('邮箱登录失败: ' + mailLoginResult.error);
+    }
+    console.log('✓ 邮箱登录成功');
+    
+    // 获取当前活动页面
+    const pages = await browser.pages();
+    const page = pages[pages.length - 1]; // 假设最后一个页面是邮箱页面
+    
+    // 等待10秒，确保邮箱界面完全加载
+    console.log('等待10秒，确保邮箱界面完全加载...');
+    await new Promise(resolve => setTimeout(resolve, 10000));
+    console.log('✓ 等待完成');
+    
+    // 查找Civitai邮件
+    console.log('正在查找Civitai邮件...');
+    const findResult = await findCivitaiEmail(page);
+    
+    if (!findResult.success) {
+      throw new Error('查找Civitai邮件失败: ' + findResult.error);
+    }
+    console.log('✓ 找到Civitai邮件');
+    
+    // 打开Civitai邮件
+    console.log('正在打开Civitai邮件...');
+    const openResult = await openCivitaiEmail(page, findResult.element);
+    
+    if (!openResult.success) {
+      throw new Error('打开Civitai邮件失败: ' + openResult.error);
+    }
+    console.log('✓ 成功打开Civitai邮件');
+    
+    // 点击Sign in按钮
+    console.log('正在点击Sign in按钮...');
+    const clickResult = await clickSignInButton(page);
+    
+    if (!clickResult.success) {
+      throw new Error('点击Sign in按钮失败: ' + clickResult.error);
+    }
+    console.log('✓ 成功点击Sign in按钮并登录Civitai');
+    
+    console.log('========== 完整工作流程执行完毕 ==========');
+    
+    return {
+      success: true,
+      error: null
+    };
+  } catch (error) {
+    console.error('❌ 执行完整工作流程过程中出错:', error.message);
+    
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
 module.exports = {
   setupRequestInterception,
   launchBrowser,
   visitUrl,
   loginToCivitai,
   loginToServ00Mail,
+  findCivitaiEmail,
+  openCivitaiEmail,
+  clickSignInButton,
+  completeWorkflow,
   runBrowserTest
 };
