@@ -4,54 +4,49 @@ const puppeteer = require('puppeteer');
   try {
     // 启动浏览器
     const browser = await puppeteer.launch({
-      // 如果在 Linux 环境中运行，可能需要以下参数
+      headless: 'new', // 使用新的无头模式
       args: [
         '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu'
-      ],
-      timeout: 60000 // 增加浏览器启动超时时间到 60 秒
+        '--disable-setuid-sandbox'
+      ]
     });
     const page = await browser.newPage();
     
-    // 设置页面超时
-    page.setDefaultNavigationTimeout(60000); // 增加导航超时时间到 60 秒
-    page.setDefaultTimeout(60000); // 增加默认操作超时时间到 60 秒
-
     // 导航到指定 URL
-    const url = 'https://civitai.com';
+    const url = 'https://baidu.com'; // 先尝试打开百度，确认基本功能正常
     console.log(`正在打开: ${url}`);
     await page.goto(url, {
-      waitUntil: 'networkidle2', // 等待网络空闲
-      timeout: 60000 // 为这个特定导航设置 60 秒超时
+      waitUntil: 'domcontentloaded', // 只等待DOM内容加载，不等待所有资源
+      timeout: 30000
     });
 
-    console.log(`成功打开: ${url}`);
+    console.log(`成功打开百度: ${url}`);
     console.log(`页面标题: ${await page.title()}`);
-
-    // 你可以在这里添加更多操作，例如截图、提取信息等
+    
+    // 如果百度能成功打开，再尝试打开 civitai.com
+    console.log('百度打开成功，现在尝试打开 civitai.com');
+    const civitaiUrl = 'https://civitai.com';
+    console.log(`正在打开: ${civitaiUrl}`);
+    
+    try {
+      // 尝试打开 civitai.com，但设置较短的超时时间
+      await page.goto(civitaiUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000 // 设置较短的超时时间，避免等待太久
+      });
+      console.log(`成功打开 civitai.com`);
+      console.log(`页面标题: ${await page.title()}`);
+    } catch (civitaiError) {
+      console.error('打开 civitai.com 时出错:', civitaiError.message);
+      console.log('这可能是由于网络限制或网站响应慢导致的');
+      console.log('尝试使用代理或VPN可能会解决此问题');
+    }
 
     // 关闭浏览器
     await browser.close();
     console.log('浏览器已关闭');
   } catch (error) {
     console.error('发生错误:', error.message);
-    console.error('错误堆栈:', error.stack);
-    
-    // 尝试截图记录错误状态（如果浏览器和页面已经创建）
-    try {
-      if (typeof page !== 'undefined' && page) {
-        const screenshotPath = `error-screenshot-${Date.now()}.png`;
-        await page.screenshot({ path: screenshotPath, fullPage: true });
-        console.log(`错误截图已保存至: ${screenshotPath}`);
-      }
-    } catch (screenshotError) {
-      console.error('无法保存错误截图:', screenshotError.message);
-    }
     
     // 确保浏览器关闭
     try {
@@ -62,7 +57,5 @@ const puppeteer = require('puppeteer');
     } catch (closeError) {
       console.error('关闭浏览器时出错:', closeError.message);
     }
-    
-    process.exit(1); // 以错误状态退出
   }
 })();
