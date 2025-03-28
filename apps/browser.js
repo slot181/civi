@@ -279,6 +279,148 @@ async function loginToCivitai(page, email) {
 }
 
 /**
+ * 登录到Serv00邮箱服务
+ * @param {import('puppeteer').Browser} browser 浏览器实例
+ * @param {string} username 用户名
+ * @param {string} password 密码
+ * @returns {Promise<{success: boolean, error: string|null}>} 登录结果
+ */
+async function loginToServ00Mail(browser, username, password) {
+  try {
+    console.log('========== 开始执行Serv00邮箱登录流程 ==========');
+    
+    // 创建新标签页
+    console.log('正在创建新标签页...');
+    const page = await browser.newPage();
+    console.log('✓ 创建新标签页成功');
+    
+    // 设置视口大小
+    await page.setViewport({ width: 1280, height: 800 });
+    console.log('✓ 设置视口大小: 1280x800');
+    
+    // 设置请求拦截
+    await setupRequestInterception(page, false);
+    
+    // 访问邮箱登录页面
+    const mailUrl = 'https://mail.serv00.com';
+    console.log(`正在打开邮箱登录页面: ${mailUrl}`);
+    const visitResult = await visitUrl(page, mailUrl, 30000);
+    
+    if (!visitResult.success) {
+      throw new Error('无法访问邮箱登录页面: ' + visitResult.error);
+    }
+    console.log('✓ 已访问邮箱登录页面');
+    
+    // 等待登录表单加载
+    console.log('正在等待登录表单加载...');
+    try {
+      await page.waitForSelector('#rcmloginuser', { timeout: 20000 });
+      console.log('✓ 登录表单已加载');
+    } catch (formError) {
+      console.error('❌ 等待登录表单超时:', formError.message);
+      
+      // 尝试获取当前页面信息
+      try {
+        const currentUrl = await page.url();
+        console.log('当前页面URL:', currentUrl);
+        
+        // 尝试获取页面内容
+        const pageContent = await page.content();
+        console.log('页面内容片段:', pageContent.substring(0, 500) + '...');
+        
+        // 尝试截图
+        await page.screenshot({ path: 'mail-form-error.png', fullPage: true });
+        console.log('已保存表单错误截图到 mail-form-error.png');
+      } catch (infoError) {
+        console.error('获取页面信息失败:', infoError.message);
+      }
+      
+      throw new Error('无法找到邮箱登录表单: ' + formError.message);
+    }
+    
+    // 输入用户名
+    console.log(`正在输入用户名: ${username}...`);
+    await page.type('#rcmloginuser', username);
+    console.log(`✓ 已输入用户名`);
+    
+    // 输入密码
+    console.log('正在输入密码...');
+    await page.type('#rcmloginpwd', password);
+    console.log('✓ 已输入密码');
+    
+    // 等待一下确保输入完成
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // 点击登录按钮
+    console.log('正在点击登录按钮...');
+    const loginButton = await page.$('#rcmloginsubmit');
+    if (loginButton) {
+      await loginButton.click();
+      console.log('✓ 已点击登录按钮');
+      
+      // 等待登录结果
+      console.log('等待登录结果...');
+      try {
+        // 等待登录成功后可能出现的元素
+        await page.waitForNavigation({ timeout: 20000 });
+        console.log('✓ 页面已导航，可能登录成功');
+        
+        // 获取登录后的页面状态
+        const postLoginInfo = await page.evaluate(() => {
+          return {
+            url: window.location.href,
+            title: document.title
+          };
+        });
+        console.log('登录后页面信息:', postLoginInfo);
+        
+        // 尝试截图
+        await page.screenshot({ path: 'mail-login-success.png', fullPage: true });
+        console.log('已保存登录成功截图到 mail-login-success.png');
+        
+        console.log('✓ 邮箱登录流程完成');
+        console.log('========== 邮箱登录流程执行完毕 ==========');
+        
+        return {
+          success: true,
+          error: null
+        };
+      } catch (navError) {
+        console.error('❌ 等待登录结果超时:', navError.message);
+        
+        // 检查是否有错误消息
+        const errorMessage = await page.evaluate(() => {
+          const errorElement = document.querySelector('.error') ||
+                              document.querySelector('.alert') ||
+                              document.querySelector('[role="alert"]');
+          return errorElement ? errorElement.textContent : null;
+        });
+        
+        if (errorMessage) {
+          console.error('登录错误消息:', errorMessage);
+        }
+        
+        // 尝试截图
+        await page.screenshot({ path: 'mail-login-error.png', fullPage: true });
+        console.log('已保存登录错误截图到 mail-login-error.png');
+        
+        throw new Error('登录超时或失败: ' + (errorMessage || navError.message));
+      }
+    } else {
+      console.error('❌ 未找到登录按钮');
+      throw new Error('未找到登录按钮');
+    }
+  } catch (error) {
+    console.error('❌ 邮箱登录过程中出错:', error.message);
+    
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
  * 运行浏览器测试流程
  * @returns {Promise<void>}
  */
@@ -305,11 +447,11 @@ async function runBrowserTest() {
     // 设置页面控制台消息监听，帮助调试
     page.on('console', msg => console.log('浏览器控制台:', msg.text()));
     
-    // 设置请求失败监听
-    page.on('requestfailed', request => {
-      console.log(`❌ 请求失败: ${request.url()}`);
-      console.log(`  失败原因: ${request.failure().errorText}`);
-    });
+    // 设置请求失败监听(调试使用)
+    // page.on('requestfailed', request => {
+    //   console.log(`❌ 请求失败: ${request.url()}`);
+    //   console.log(`  失败原因: ${request.failure().errorText}`);
+    // });
     
     // 设置更多的页面选项
     await page.setDefaultNavigationTimeout(60000); // 设置导航超时为60秒
@@ -338,6 +480,23 @@ async function runBrowserTest() {
         };
       });
       console.log('登录后页面信息:', postLoginInfo);
+      
+      // 等待30秒后执行邮箱登录
+      console.log('\n等待30秒后执行邮箱登录...');
+      await new Promise(resolve => setTimeout(resolve, 30000));
+      console.log('✓ 等待完成，开始执行邮箱登录');
+      
+      // 执行邮箱登录流程
+      const mailUsername = 'slot@stonecoks.vip';
+      const mailPassword = 'ww..MM123456789';
+      console.log(`准备使用账户 ${mailUsername} 登录邮箱`);
+      const mailLoginResult = await loginToServ00Mail(browser, mailUsername, mailPassword);
+      
+      if (mailLoginResult.success) {
+        console.log('✓ 邮箱登录流程执行成功');
+      } else {
+        console.log('❌ 邮箱登录流程执行失败:', mailLoginResult.error);
+      }
     } else {
       console.log('❌ 登录流程执行失败:', loginResult.error);
     }
@@ -380,5 +539,6 @@ module.exports = {
   launchBrowser,
   visitUrl,
   loginToCivitai,
+  loginToServ00Mail,
   runBrowserTest
 };
