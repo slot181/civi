@@ -4,7 +4,7 @@ const puppeteer = require('puppeteer');
   // 启动浏览器
   const browser = await puppeteer.launch({
     // 如果在 Linux 环境中运行，可能需要以下参数
-    // args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
   const page = await browser.newPage();
 
