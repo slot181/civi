@@ -59,21 +59,67 @@ async function loginToCivitai(page, email) {
     console.log('========== 开始执行登录流程 ==========');
     
     // 等待页面完全加载
-    console.log('正在等待页面加载完成，寻找登录按钮...');
-    await page.waitForSelector('a[href="/login?returnUrl=/"]', { timeout: 10000 });
-    console.log('✓ 找到登录按钮');
+    console.log('正在等待页面加载完成...');
+    await page.waitForSelector('body', { timeout: 10000 });
     
-    // 获取页面HTML结构，帮助调试
-    const signInButtonHTML = await page.evaluate(() => {
-      const button = document.querySelector('a[href="/login?returnUrl=/"]');
-      return button ? button.outerHTML : '未找到按钮';
+    // 获取页面HTML，帮助调试
+    const pageHTML = await page.content();
+    console.log('页面HTML片段:', pageHTML.substring(0, 500) + '...');
+    
+    // 尝试查找登录按钮
+    console.log('正在寻找登录按钮...');
+    
+    // 获取所有可能的登录按钮
+    const signInButtons = await page.evaluate(() => {
+      // 尝试多种选择器
+      const buttons = [
+        // 通过文本内容查找
+        ...Array.from(document.querySelectorAll('a, button')).filter(el =>
+          el.textContent && el.textContent.trim().toLowerCase() === 'sign in'),
+        // 通过href属性查找
+        ...Array.from(document.querySelectorAll('a[href*="login"]')),
+        // 通过rel属性查找
+        ...Array.from(document.querySelectorAll('a[rel="nofollow"]')),
+        // 通过data-button属性查找
+        ...Array.from(document.querySelectorAll('a[data-button="true"]'))
+      ];
+      
+      return buttons.map(button => ({
+        text: button.textContent.trim(),
+        outerHTML: button.outerHTML,
+        href: button.getAttribute('href'),
+        classes: button.getAttribute('class')
+      }));
     });
-    console.log('登录按钮HTML结构:', signInButtonHTML);
     
-    // 点击"Sign In"按钮
-    console.log('正在点击登录按钮...');
-    await page.click('a[href="/login?returnUrl=/"]');
-    console.log('✓ 已点击登录按钮');
+    console.log('找到可能的登录按钮:', signInButtons.length);
+    signInButtons.forEach((btn, index) => {
+      console.log(`按钮 ${index + 1}:`, btn);
+    });
+    
+    // 尝试点击第一个找到的登录按钮
+    if (signInButtons.length > 0) {
+      const buttonSelector = signInButtons[0].href ?
+        `a[href="${signInButtons[0].href}"]` :
+        `a.${signInButtons[0].classes.split(' ')[0]}`;
+      
+      console.log('使用选择器:', buttonSelector);
+      await page.waitForSelector(buttonSelector, { timeout: 5000 });
+      console.log('✓ 找到登录按钮');
+      
+      // 点击"Sign In"按钮
+      console.log('正在点击登录按钮...');
+      await page.click(buttonSelector);
+      console.log('✓ 已点击登录按钮');
+    } else {
+      // 如果找不到登录按钮，尝试直接访问登录页面
+      console.log('未找到登录按钮，尝试直接访问登录页面...');
+      await page.goto('https://civitai.com/login?returnUrl=/', {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000
+      });
+      console.log('✓ 已直接访问登录页面');
+    }
     
     // 等待登录弹窗加载
     console.log('正在等待登录弹窗加载...');
@@ -89,7 +135,7 @@ async function loginToCivitai(page, email) {
     
     // 等待一下确保表单完全加载
     console.log('等待表单完全加载...');
-    await page.waitForTimeout(1000);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // 输入邮箱
     console.log(`正在输入邮箱: ${email}...`);
@@ -97,7 +143,7 @@ async function loginToCivitai(page, email) {
     console.log(`✓ 已输入邮箱: ${email}`);
     
     // 等待一下确保输入完成
-    await page.waitForTimeout(500);
+    await new Promise(resolve => setTimeout(resolve, 500));
     
     // 点击"Continue"按钮
     console.log('正在寻找Continue按钮...');
@@ -117,7 +163,7 @@ async function loginToCivitai(page, email) {
       
       // 等待发送邮件的结果
       console.log('等待发送邮件结果...');
-      await page.waitForTimeout(2000);
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       // 尝试获取结果信息
       const resultMessage = await page.evaluate(() => {
@@ -236,7 +282,7 @@ async function runBrowserTest() {
       
       // 等待一段时间以便查看结果
       console.log('等待5秒钟...');
-      await page.waitForTimeout(5000);
+      await new Promise(resolve => setTimeout(resolve, 5000));
     } else {
       console.log('❌ 打开 civitai.com 失败');
       console.log('  错误信息:', targetResult.error);
