@@ -74,7 +74,7 @@ async function visitUrl(page, url, timeout = 30000) {
     
     // 尝试访问页面
     await page.goto(url, {
-      waitUntil: 'networkidle2', // 等待网络空闲，更可靠但可能更慢
+      waitUntil: 'domcontentloaded', // 只等待DOM内容加载，不等待所有资源
       timeout: timeout
     });
     
