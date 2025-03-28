@@ -13,11 +13,11 @@ const puppeteer = require('puppeteer');
     const page = await browser.newPage();
     
     // 导航到指定 URL
-    const url = 'https://baidu.com'; // 先尝试打开百度，确认基本功能正常
+    const url = 'https://newapi.stonecoks.vip'; // 先尝试打开newapi，确认基本功能正常
     console.log(`正在打开: ${url}`);
     await page.goto(url, {
       waitUntil: 'domcontentloaded', // 只等待DOM内容加载，不等待所有资源
-      timeout: 30000
+      timeout: 15000
     });
 
     console.log(`成功打开百度: ${url}`);
