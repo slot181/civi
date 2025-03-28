@@ -210,10 +210,13 @@ async function requestCivitaiLoginEmail(page, email) {
     // 输入邮箱
     console.log(`正在输入civitai邮箱: ${email}...`);
     await page.type('#input_email', email);
-    console.log(`✓ 已输入civitai邮箱: ${email}`);
     
-    // 等待一下确保输入完成
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // 在邮箱输入完毕后截图
+    console.log('正在截取邮箱输入完成后的页面...');
+    await page.screenshot({ path: 'email-input-completed.png', fullPage: true });
+    console.log('✓ 已保存邮箱输入完成截图到 email-input-completed.png');
+    
+    console.log(`✓ 已输入civitai邮箱: ${email}`);
     
     // 点击"Continue"按钮
     console.log('正在寻找Continue按钮...');
