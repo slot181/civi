@@ -133,14 +133,14 @@ async function visitUrl(page, url, timeout = 30000) {
 }
 
 /**
- * 在Civitai网站上执行登录流程
+ * 在Civitai网站上请求发送登录邮件
  * @param {import('puppeteer').Page} page 页面实例
- * @param {string} email 用于登录的邮箱地址
- * @returns {Promise<{success: boolean, error: string|null}>} 登录结果
+ * @param {string} email 用于接收登录邮件的邮箱地址
+ * @returns {Promise<{success: boolean, error: string|null}>} 请求结果
  */
-async function loginToCivitai(page, email) {
+async function requestCivitaiLoginEmail(page, email) {
   try {
-    console.log('========== 开始执行登录流程 ==========');
+    console.log('========== 开始执行civitai邮件发送流程 ==========');
     
     // 使用visitUrl函数访问登录页面，而不是直接使用page.goto
     console.log('使用visitUrl函数访问登录页面...');
@@ -148,18 +148,18 @@ async function loginToCivitai(page, email) {
     const loginPageResult = await visitUrl(page, loginUrl, 30000);
     
     if (!loginPageResult.success) {
-      throw new Error('无法访问登录页面: ' + loginPageResult.error);
+      throw new Error('无法访问civitai登录页面: ' + loginPageResult.error);
     }
     
-    console.log('✓ 已访问登录页面');
+    console.log('✓ 已访问civitai登录页面');
     
     // 等待登录表单加载
-    console.log('正在等待登录表单加载...');
+    console.log('正在等待civitai登录表单加载...');
     try {
       await page.waitForSelector('#input_email', { timeout: 20000 });
-      console.log('✓ 登录表单已加载');
+      console.log('✓ civitai登录表单已加载');
     } catch (formError) {
-      console.error('❌ 等待登录表单超时:', formError.message);
+      console.error('❌ civitai等待登录表单超时:', formError.message);
       
       // 尝试获取当前页面信息
       try {
@@ -198,19 +198,19 @@ async function loginToCivitai(page, email) {
         const form = document.querySelector('form');
         return form ? form.outerHTML : '未找到登录表单';
       });
-      console.log('登录表单HTML结构:', loginFormHTML);
+      console.log('civitai登录表单HTML结构:', loginFormHTML);
     } catch (formHtmlError) {
-      console.warn('⚠️ 无法获取登录表单HTML:', formHtmlError.message);
+      console.warn('⚠️ civitai无法获取登录表单HTML:', formHtmlError.message);
     }
     
     // 等待一下确保表单完全加载
-    console.log('等待表单完全加载...');
+    console.log('等待civitai表单完全加载...');
     await new Promise(resolve => setTimeout(resolve, 3000));
     
     // 输入邮箱
-    console.log(`正在输入邮箱: ${email}...`);
+    console.log(`正在输入civitai邮箱: ${email}...`);
     await page.type('#input_email', email);
-    console.log(`✓ 已输入邮箱: ${email}`);
+    console.log(`✓ 已输入civitai邮箱: ${email}`);
     
     // 等待一下确保输入完成
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -232,7 +232,7 @@ async function loginToCivitai(page, email) {
       console.log('✓ 已点击Continue按钮');
       
       // 等待发送邮件的结果
-      console.log('等待发送邮件结果...');
+      console.log('等待civitai发送邮件结果...');
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       // 尝试获取结果信息
@@ -244,7 +244,7 @@ async function loginToCivitai(page, email) {
       });
       console.log('结果消息:', resultMessage);
       
-      console.log('✓ 邮件发送流程完成');
+      console.log('✓ civitai邮件发送流程完成');
       console.log('========== 登录流程执行完毕 ==========');
       
       return {
@@ -261,7 +261,7 @@ async function loginToCivitai(page, email) {
       throw new Error('未找到Continue按钮');
     }
   } catch (error) {
-    console.error('❌ 登录过程中出错:', error.message);
+    console.error('❌ civitai发送邮件过程中出错:', error.message);
     
     // 尝试截图保存错误状态
     try {
@@ -464,13 +464,13 @@ async function runBrowserTest() {
     // 直接执行登录流程，不先访问主页
     console.log('\n直接执行登录流程...');
     
-    // 执行登录流程，使用测试邮箱
+    // 执行请求Civitai登录邮件流程，使用测试邮箱
     const testEmail = 'arena1516611@gmail.com';
-    console.log(`准备使用邮箱 ${testEmail} 执行登录流程`);
-    const loginResult = await loginToCivitai(page, testEmail);
+    console.log(`准备使用邮箱 ${testEmail} 请求Civitai登录邮件`);
+    const loginResult = await requestCivitaiLoginEmail(page, testEmail);
     
     if (loginResult.success) {
-      console.log('✓ 登录流程执行成功');
+      console.log('✓ Civitai登录邮件请求成功');
       
       // 获取登录后的页面状态
       const postLoginInfo = await page.evaluate(() => {
@@ -498,7 +498,7 @@ async function runBrowserTest() {
         console.log('❌ 完整工作流程执行失败:', workflowResult.error);
       }
     } else {
-      console.log('❌ 登录流程执行失败:', loginResult.error);
+      console.log('❌ Civitai登录邮件请求失败:', loginResult.error);
     }
     
     // 等待一段时间以便查看结果
@@ -885,7 +885,7 @@ module.exports = {
   setupRequestInterception,
   launchBrowser,
   visitUrl,
-  loginToCivitai,
+  requestCivitaiLoginEmail,
   loginToServ00Mail,
   findCivitaiEmail,
   openCivitaiEmail,
