@@ -1,6 +1,40 @@
 const puppeteer = require('puppeteer');
 
 /**
+ * 配置请求拦截，过滤资源并修改请求头
+ * @param {import('puppeteer').Page} page 页面实例
+ * @param {boolean} filterResources 是否过滤资源（图片、字体、媒体）
+ * @returns {Promise<void>}
+ */
+async function setupRequestInterception(page, filterResources = false) {
+  // 重置请求拦截
+  if (page._requestInterceptionEnabled) {
+    page.removeAllListeners('request');
+  } else {
+    await page.setRequestInterception(true);
+    page._requestInterceptionEnabled = true;
+  }
+  
+  // 添加新的请求监听器
+  page.on('request', (request) => {
+    // 检查请求是否已被处理（Puppeteer最佳实践）
+    if (request.isInterceptResolutionHandled && request.isInterceptResolutionHandled()) return;
+    
+    const resourceType = request.resourceType();
+    // 根据参数决定是否过滤资源
+    if (filterResources && ['image', 'font', 'media'].includes(resourceType)) {
+      request.abort();
+    } else {
+      // 修改请求头
+      const headers = request.headers();
+      headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+      headers['Accept-Language'] = 'en-US,en;q=0.9';
+      request.continue({ headers });
+    }
+  });
+}
+
+/**
  * 启动浏览器并返回浏览器实例
  * @returns {Promise<import('puppeteer').Browser>} 浏览器实例
  */
@@ -33,18 +67,9 @@ async function visitUrl(page, url, timeout = 30000) {
   try {
     console.log(`正在打开: ${url}`);
     
-    // 设置请求拦截，可以修改请求头
+    // 设置请求拦截，不过滤资源
     if (!page._requestInterceptionEnabled) {
-      await page.setRequestInterception(true);
-      page._requestInterceptionEnabled = true;
-      
-      page.on('request', (request) => {
-        // 修改请求头
-        const headers = request.headers();
-        headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
-        headers['Accept-Language'] = 'en-US,en;q=0.9';
-        request.continue({ headers });
-      });
+      await setupRequestInterception(page, false);
     }
     
     // 尝试访问页面
@@ -290,30 +315,9 @@ async function runBrowserTest() {
     await page.setDefaultNavigationTimeout(60000); // 设置导航超时为60秒
     await page.setDefaultTimeout(30000); // 设置默认超时为30秒
     
-    // 禁用某些资源加载，提高性能
-    // 注意：visitUrl函数已经设置了请求拦截，这里我们只需要修改拦截处理器
-    if (page._requestInterceptionEnabled) {
-      // 移除现有的请求监听器
-      page.removeAllListeners('request');
-    } else {
-      await page.setRequestInterception(true);
-      page._requestInterceptionEnabled = true;
-    }
-    
-    // 添加新的请求监听器
-    page.on('request', (request) => {
-      const resourceType = request.resourceType();
-      // 阻止加载图片、字体、媒体等资源，减少网络负载
-      if (['image', 'font', 'media'].includes(resourceType)) {
-        request.abort();
-      } else {
-        // 修改请求头
-        const headers = request.headers();
-        headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
-        headers['Accept-Language'] = 'en-US,en;q=0.9';
-        request.continue({ headers });
-      }
-    });
+    // 设置请求拦截，启用资源过滤以提高性能
+    // 这将阻止加载图片、字体、媒体等资源，减少网络负载
+    await setupRequestInterception(page, true);
     
     // 直接执行登录流程，不先访问主页
     console.log('\n直接执行登录流程...');
@@ -372,6 +376,7 @@ async function runBrowserTest() {
 }
 
 module.exports = {
+  setupRequestInterception,
   launchBrowser,
   visitUrl,
   loginToCivitai,
