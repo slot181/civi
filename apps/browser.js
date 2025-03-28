@@ -734,13 +734,14 @@ async function clickSignInButton(page) {
       // 保存链接URL
       const signInUrl = signInButton;
       
-      // 直接导航到Sign in链接
-      console.log(`正在导航到: ${signInUrl}`);
-      await page.goto(signInUrl, {
-        waitUntil: 'domcontentloaded', // 使用更宽松的等待条件
-        timeout: 45000 // 增加超时时间到45秒
-      });
-      console.log('✓ 已导航到Sign in链接');
+      // 使用visitUrl函数导航到Sign in链接，以便更好地伪装请求
+      console.log(`正在使用visitUrl函数导航到: ${signInUrl}`);
+      const visitResult = await visitUrl(page, signInUrl, 60000); // 增加超时时间到60秒
+      
+      if (!visitResult.success) {
+        throw new Error('无法访问Civitai登录链接: ' + visitResult.error);
+      }
+      console.log('✓ 已成功导航到Sign in链接');
       
       // 等待一段时间，确保页面有足够时间加载
       console.log('等待10秒，确保页面加载...');
