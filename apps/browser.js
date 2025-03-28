@@ -728,74 +728,67 @@ async function clickSignInButton(page) {
       // 点击Sign in按钮
       console.log('正在点击Sign in按钮...');
       
-      // 创建新标签页来打开链接
-      console.log('正在创建新标签页打开链接...');
-      const newPage = await page.browser().newPage();
-      await newPage.setViewport({ width: 1280, height: 800 });
+      // 直接在当前页面打开链接，而不是创建新标签页
+      console.log('正在当前页面打开链接...');
       
-      // 设置请求拦截
-      await setupRequestInterception(newPage, false);
+      // 保存链接URL
+      const signInUrl = signInButton;
       
-      // 导航到Sign in链接
-      await newPage.goto(signInButton, {
-        waitUntil: 'networkidle2',
-        timeout: 60000
+      // 直接导航到Sign in链接
+      console.log(`正在导航到: ${signInUrl}`);
+      await page.goto(signInUrl, {
+        waitUntil: 'domcontentloaded', // 使用更宽松的等待条件
+        timeout: 45000 // 增加超时时间到45秒
       });
       console.log('✓ 已导航到Sign in链接');
       
-      // 等待Civitai页面加载
-      console.log('正在等待Civitai页面加载...');
-      try {
-        await newPage.waitForNavigation({ timeout: 60000 });
-        console.log('✓ 页面已导航');
+      // 等待一段时间，确保页面有足够时间加载
+      console.log('等待10秒，确保页面加载...');
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      console.log('✓ 等待完成');
+      
+      // 获取当前URL
+      const currentUrl = await page.url();
+      console.log('当前页面URL:', currentUrl);
+      
+      // 尝试截图
+      await page.screenshot({ path: 'civitai-login-result.png', fullPage: true });
+      console.log('已保存Civitai登录结果截图到 civitai-login-result.png');
+      
+      // 检查是否成功登录到Civitai
+      if (currentUrl.includes('civitai.com')) {
+        console.log('✓ 成功登录到Civitai');
         
-        // 获取当前URL
-        const currentUrl = await newPage.url();
-        console.log('当前页面URL:', currentUrl);
-        
-        // 检查是否成功登录到Civitai
-        if (currentUrl.includes('civitai.com')) {
-          console.log('✓ 成功登录到Civitai');
+        // 等待页面内容加载
+        try {
+          // 等待页面上可能出现的元素，表明登录成功
+          await page.waitForSelector('body', { timeout: 10000 });
           
-          // 尝试截图
-          await newPage.screenshot({ path: 'civitai-login-success.png', fullPage: true });
+          // 再次截图，确保捕获完整的登录后页面
+          await page.screenshot({ path: 'civitai-login-success.png', fullPage: true });
           console.log('已保存Civitai登录成功截图到 civitai-login-success.png');
-          
-          console.log('========== Sign in按钮点击完成 ==========');
-          
-          // 关闭新标签页
-          await newPage.close();
-          console.log('✓ 已关闭Civitai标签页');
-          
-          return {
-            success: true,
-            error: null
-          };
-        } else {
-          console.error('❌ 未能成功登录到Civitai');
-          
-          // 尝试截图
-          await newPage.screenshot({ path: 'civitai-login-failed.png', fullPage: true });
-          console.log('已保存Civitai登录失败截图到 civitai-login-failed.png');
-          
-          // 关闭新标签页
-          await newPage.close();
-          console.log('✓ 已关闭Civitai标签页');
-          
-          throw new Error('未能成功登录到Civitai');
+        } catch (elementError) {
+          console.warn('⚠️ 等待页面元素超时，但继续执行:', elementError.message);
         }
-      } catch (navError) {
-        console.error('❌ 等待Civitai页面加载超时:', navError.message);
         
-        // 尝试截图
-        await newPage.screenshot({ path: 'civitai-navigation-error.png', fullPage: true });
-        console.log('已保存Civitai导航错误截图到 civitai-navigation-error.png');
+        console.log('========== Sign in按钮点击完成 ==========');
         
-        // 关闭新标签页
-        await newPage.close();
-        console.log('✓ 已关闭Civitai标签页');
+        return {
+          success: true,
+          error: null
+        };
+      } else {
+        console.error('❌ 未能成功登录到Civitai');
         
-        throw new Error('等待Civitai页面加载超时: ' + navError.message);
+        // 尝试获取页面内容，帮助调试
+        try {
+          const pageContent = await page.content();
+          console.log('页面内容片段:', pageContent.substring(0, 500) + '...');
+        } catch (contentError) {
+          console.error('获取页面内容失败:', contentError.message);
+        }
+        
+        throw new Error('未能成功登录到Civitai');
       }
     } else {
       console.error('❌ 未找到Sign in按钮');
