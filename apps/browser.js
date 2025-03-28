@@ -144,7 +144,7 @@ async function requestCivitaiLoginEmail(page, email) {
     
     // 使用visitUrl函数访问登录页面，而不是直接使用page.goto
     console.log('使用visitUrl函数访问登录页面...');
-    const loginUrl = 'https://civitai.com/login';
+    const loginUrl = 'https://deno-arna-civitai-proxy.deno.dev/login';
     const loginPageResult = await visitUrl(page, loginUrl, 30000);
     
     if (!loginPageResult.success) {
@@ -751,6 +751,11 @@ async function clickSignInButton(page) {
       console.log('已保存Civitai登录结果截图到 civitai-login-result.png');
       
       console.log('========== Sign in按钮点击完成 ==========');
+      
+      return {
+        success: true,
+        error: null
+      };
     } else {
       console.error('❌ 未找到Sign in按钮');
       
