@@ -34,14 +34,18 @@ async function visitUrl(page, url, timeout = 30000) {
     console.log(`正在打开: ${url}`);
     
     // 设置请求拦截，可以修改请求头
-    await page.setRequestInterception(true);
-    page.on('request', (request) => {
-      // 修改请求头
-      const headers = request.headers();
-      headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
-      headers['Accept-Language'] = 'en-US,en;q=0.9';
-      request.continue({ headers });
-    });
+    if (!page._requestInterceptionEnabled) {
+      await page.setRequestInterception(true);
+      page._requestInterceptionEnabled = true;
+      
+      page.on('request', (request) => {
+        // 修改请求头
+        const headers = request.headers();
+        headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+        headers['Accept-Language'] = 'en-US,en;q=0.9';
+        request.continue({ headers });
+      });
+    }
     
     // 尝试访问页面
     await page.goto(url, {
@@ -113,27 +117,16 @@ async function loginToCivitai(page, email) {
   try {
     console.log('========== 开始执行登录流程 ==========');
     
-    // 直接访问登录页面，而不是尝试点击登录按钮
-    console.log('直接访问登录页面...');
-    try {
-      await page.goto('https://civitai.com/login', {
-        waitUntil: 'networkidle2',
-        timeout: 30000
-      });
-      console.log('✓ 已访问登录页面');
-    } catch (navError) {
-      console.error('❌ 访问登录页面失败:', navError.message);
-      
-      // 尝试截图保存错误状态
-      try {
-        await page.screenshot({ path: 'login-page-error.png' });
-        console.log('已保存登录页面错误截图到 login-page-error.png');
-      } catch (screenshotError) {
-        console.error('保存错误截图失败:', screenshotError.message);
-      }
-      
-      throw new Error('无法访问登录页面: ' + navError.message);
+    // 使用visitUrl函数访问登录页面，而不是直接使用page.goto
+    console.log('使用visitUrl函数访问登录页面...');
+    const loginUrl = 'https://civitai.com/login';
+    const loginPageResult = await visitUrl(page, loginUrl, 30000);
+    
+    if (!loginPageResult.success) {
+      throw new Error('无法访问登录页面: ' + loginPageResult.error);
     }
+    
+    console.log('✓ 已访问登录页面');
     
     // 等待登录表单加载
     console.log('正在等待登录表单加载...');
@@ -187,7 +180,7 @@ async function loginToCivitai(page, email) {
     
     // 等待一下确保表单完全加载
     console.log('等待表单完全加载...');
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 3000));
     
     // 输入邮箱
     console.log(`正在输入邮箱: ${email}...`);
@@ -195,7 +188,7 @@ async function loginToCivitai(page, email) {
     console.log(`✓ 已输入邮箱: ${email}`);
     
     // 等待一下确保输入完成
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // 点击"Continue"按钮
     console.log('正在寻找Continue按钮...');
@@ -298,7 +291,16 @@ async function runBrowserTest() {
     await page.setDefaultTimeout(30000); // 设置默认超时为30秒
     
     // 禁用某些资源加载，提高性能
-    await page.setRequestInterception(true);
+    // 注意：visitUrl函数已经设置了请求拦截，这里我们只需要修改拦截处理器
+    if (page._requestInterceptionEnabled) {
+      // 移除现有的请求监听器
+      page.removeAllListeners('request');
+    } else {
+      await page.setRequestInterception(true);
+      page._requestInterceptionEnabled = true;
+    }
+    
+    // 添加新的请求监听器
     page.on('request', (request) => {
       const resourceType = request.resourceType();
       // 阻止加载图片、字体、媒体等资源，减少网络负载
