@@ -776,6 +776,121 @@ async function clickSignInButton(page) {
 }
 
 /**
+ * 检查并设置Civitai页面的排序选项为"Newest"
+ * @param {import('puppeteer').Page} page 页面实例
+ * @returns {Promise<{success: boolean, error: string|null}>} 操作结果
+ */
+async function checkAndSetNewestSorting(page) {
+  try {
+    console.log('========== 开始检查并设置排序选项 ==========');
+    
+    // 等待页面完全加载
+    console.log('等待页面完全加载...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    // 检查当前排序选项
+    console.log('正在检查当前排序选项...');
+    const isSortedByNewest = await page.evaluate(() => {
+      // 查找排序按钮，包含"Newest"文本和排序图标
+      const sortButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
+      const sortButton = sortButtons.find(button => {
+        const buttonText = button.textContent || '';
+        return buttonText.includes('Newest') &&
+               button.querySelector('svg') !== null;
+      });
+      
+      // 如果找到包含"Newest"的排序按钮，则认为已经是按"Newest"排序
+      return !!sortButton;
+    });
+    
+    if (isSortedByNewest) {
+      console.log('✓ 当前已经按"Newest"排序');
+      return {
+        success: true,
+        error: null
+      };
+    }
+    
+    console.log('当前不是按"Newest"排序，准备点击排序按钮...');
+    
+    // 点击排序按钮打开下拉菜单
+    const clickSortButton = await page.evaluate(() => {
+      // 查找包含排序图标的按钮
+      const sortButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
+      const sortButton = sortButtons.find(button => {
+        return button.querySelector('svg[class*="tabler-icon-sort-descending"]') !== null ||
+               button.querySelector('svg[class*="tabler-icon-chevron-down"]') !== null;
+      });
+      
+      if (sortButton) {
+        sortButton.click();
+        return true;
+      }
+      return false;
+    });
+    
+    if (!clickSortButton) {
+      console.error('❌ 未找到排序按钮');
+      await page.screenshot({ path: 'sort-button-not-found.png', fullPage: true });
+      throw new Error('未找到排序按钮');
+    }
+    
+    console.log('✓ 已点击排序按钮');
+    
+    // 等待下拉菜单出现
+    console.log('等待下拉菜单出现...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // 在下拉菜单中点击"Newest"选项
+    console.log('正在查找并点击"Newest"选项...');
+    const clickNewestOption = await page.evaluate(() => {
+      // 查找下拉菜单中的"Newest"选项
+      const menuItems = Array.from(document.querySelectorAll('[data-menu-item="true"]'));
+      const newestOption = menuItems.find(item => {
+        const itemText = item.textContent || '';
+        return itemText.includes('Newest');
+      });
+      
+      if (newestOption) {
+        newestOption.click();
+        return true;
+      }
+      return false;
+    });
+    
+    if (!clickNewestOption) {
+      console.error('❌ 未找到"Newest"选项');
+      await page.screenshot({ path: 'newest-option-not-found.png', fullPage: true });
+      throw new Error('未找到"Newest"选项');
+    }
+    
+    console.log('✓ 已点击"Newest"选项');
+    
+    // 等待排序应用
+    console.log('等待排序应用...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    // 截图保存最终结果
+    await page.screenshot({ path: 'newest-sorting-applied.png', fullPage: true });
+    console.log('✓ 已保存排序应用后截图到 newest-sorting-applied.png');
+    
+    console.log('========== 排序选项设置完成 ==========');
+    
+    return {
+      success: true,
+      error: null
+    };
+  } catch (error) {
+    console.error('❌ 检查并设置排序选项过程中出错:', error.message);
+    
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
  * 完成从邮箱登录到Civitai登录的完整工作流程
  * @param {import('puppeteer').Browser} browser 浏览器实例
  * @param {string} username 邮箱用户名
@@ -831,6 +946,36 @@ async function completeWorkflow(browser, username, password) {
     }
     console.log('✓ 成功点击Sign in按钮并登录Civitai');
     
+    // 导航到视频页面
+    console.log('正在导航到Civitai视频页面...');
+    const videosUrl = 'https://civitai.com/videos';
+    const videosPageResult = await visitUrl(page, videosUrl, 30000);
+    
+    if (!videosPageResult.success) {
+      throw new Error('无法访问Civitai视频页面: ' + videosPageResult.error);
+    }
+    console.log('✓ 已成功导航到Civitai视频页面');
+    
+    // 等待视频页面加载完成
+    console.log('等待视频页面加载完成...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    console.log('✓ 等待完成');
+    
+    // 截图保存视频页面状态
+    await page.screenshot({ path: 'civitai-videos-page.png', fullPage: true });
+    console.log('✓ 已保存视频页面截图到 civitai-videos-page.png');
+    
+    // 检查并设置排序选项为"Newest"
+    console.log('正在检查并设置排序选项...');
+    const sortingResult = await checkAndSetNewestSorting(page);
+    
+    if (!sortingResult.success) {
+      console.warn('⚠️ 设置排序选项失败:', sortingResult.error);
+      // 继续执行，不中断工作流程
+    } else {
+      console.log('✓ 成功设置排序选项为"Newest"');
+    }
+    
     console.log('========== 完整工作流程执行完毕 ==========');
     
     return {
@@ -856,6 +1001,7 @@ module.exports = {
   findCivitaiEmail,
   openCivitaiEmail,
   clickSignInButton,
+  checkAndSetNewestSorting,
   completeWorkflow,
   runBrowserTest
 };
