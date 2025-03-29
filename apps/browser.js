@@ -845,16 +845,42 @@ async function checkAndSetNewestSorting(page) {
     console.log('正在查找并点击"Newest"选项...');
     const clickNewestOption = await page.evaluate(() => {
       // 查找下拉菜单中的"Newest"选项
-      const menuItems = Array.from(document.querySelectorAll('[data-menu-item="true"]'));
+      // 首先查找所有菜单项
+      const menuItems = Array.from(document.querySelectorAll('.mantine-Menu-item'));
+      
+      // 然后查找包含"Newest"文本的菜单项
       const newestOption = menuItems.find(item => {
-        const itemText = item.textContent || '';
-        return itemText.includes('Newest');
+        // 查找菜单项内部的标签元素
+        const labelElement = item.querySelector('.mantine-Menu-itemLabel');
+        if (labelElement) {
+          const labelText = labelElement.textContent || '';
+          return labelText.trim() === 'Newest';
+        }
+        return false;
       });
       
+      console.log('找到的菜单项数量:', menuItems.length);
+      if (menuItems.length > 0) {
+        console.log('菜单项内容:', menuItems.map(item => item.textContent).join(', '));
+      }
+      
       if (newestOption) {
+        console.log('找到Newest选项，准备点击');
         newestOption.click();
         return true;
       }
+      
+      // 如果没有找到精确匹配，尝试模糊匹配
+      const fuzzyMatch = menuItems.find(item => {
+        return (item.textContent || '').includes('Newest');
+      });
+      
+      if (fuzzyMatch) {
+        console.log('找到模糊匹配的Newest选项，准备点击');
+        fuzzyMatch.click();
+        return true;
+      }
+      
       return false;
     });
     
@@ -976,6 +1002,16 @@ async function completeWorkflow(browser, username, password) {
       console.log('✓ 成功设置排序选项为"Newest"');
     }
     
+    // 执行自动点赞视频功能
+    console.log('正在执行自动点赞视频功能...');
+    const likeResult = await autoLikeVideos(page);
+    
+    if (!likeResult.success) {
+      console.warn('⚠️ 自动点赞视频功能执行失败:', likeResult.error);
+    } else {
+      console.log(`✓ 自动点赞视频功能执行成功，共点赞 ${likeResult.likeCount} 次`);
+    }
+    
     console.log('========== 完整工作流程执行完毕 ==========');
     
     return {
@@ -992,6 +1028,186 @@ async function completeWorkflow(browser, username, password) {
   }
 }
 
+/**
+ * 自动点赞视频功能
+ * @param {import('puppeteer').Page} page 页面实例
+ * @returns {Promise<{success: boolean, likeCount: number, error: string|null}>} 点赞结果
+ */
+async function autoLikeVideos(page) {
+  try {
+    console.log('========== 开始执行自动点赞视频功能 ==========');
+    
+    // 将滚动轴重置到页面顶部
+    console.log('正在将滚动轴重置到页面顶部...');
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+    });
+    console.log('✓ 已将滚动轴重置到页面顶部');
+    
+    // 等待页面内容加载
+    console.log('等待页面内容加载...');
+    await new Promise(resolve => setTimeout(resolve, 10000));
+    
+    // 初始化计数器
+    let successLikeCount = 0;  // 成功点赞计数
+    let consecutiveFailCount = 0;  // 连续失败计数
+    let scrollCount = 0;  // 滚动次数计数
+    
+    // 截图保存初始状态
+    await page.screenshot({ path: `auto-like-initial.png`, fullPage: true });
+    console.log('✓ 已保存初始状态截图到 auto-like-initial.png');
+    
+    // 开始循环查找并点赞
+    while (successLikeCount < 50 && consecutiveFailCount < 5) {
+      console.log(`\n当前状态: 成功点赞 ${successLikeCount} 次, 连续失败 ${consecutiveFailCount} 次, 滚动 ${scrollCount} 次`);
+      
+      // 查找所有👍按钮
+      const likeButtons = await page.evaluate(() => {
+        // 查找所有按钮
+        const buttons = Array.from(document.querySelectorAll('button[data-button="true"]'));
+        
+        // 过滤出包含👍表情的按钮
+        const likeButtons = buttons.filter(button => {
+          const text = button.textContent || '';
+          return text.includes('👍');
+        });
+        
+        // 返回按钮信息
+        return likeButtons.map(button => {
+          // 检查按钮是否已点击过（通过class判断）
+          const isClicked = button.classList.contains('mantine-1rk94m8');
+          // 获取按钮在页面中的位置
+          const rect = button.getBoundingClientRect();
+          
+          return {
+            isClicked,
+            isVisible: rect.top >= 0 && rect.top <= window.innerHeight,
+            top: rect.top,
+            text: button.textContent
+          };
+        });
+      });
+      
+      console.log(`找到 ${likeButtons.length} 个👍按钮, 其中 ${likeButtons.filter(b => b.isClicked).length} 个已点击过`);
+      
+      // 查找第一个可见且未点击的按钮
+      const buttonToClick = likeButtons.find(button => button.isVisible && !button.isClicked);
+      
+      if (buttonToClick) {
+        // 找到可点击的按钮
+        console.log(`找到可点击的👍按钮: ${buttonToClick.text}`);
+        
+        // 点击按钮
+        const clickResult = await page.evaluate(() => {
+          // 查找所有按钮
+          const buttons = Array.from(document.querySelectorAll('button[data-button="true"]'));
+          
+          // 过滤出包含👍表情且未点击过的按钮
+          const likeButtons = buttons.filter(button => {
+            const text = button.textContent || '';
+            return text.includes('👍') && !button.classList.contains('mantine-1rk94m8');
+          });
+          
+          // 找到第一个可见的按钮
+          for (const button of likeButtons) {
+            const rect = button.getBoundingClientRect();
+            if (rect.top >= 0 && rect.top <= window.innerHeight) {
+              // 点击按钮
+              button.click();
+              return true;
+            }
+          }
+          
+          return false;
+        });
+        
+        if (clickResult) {
+          console.log('✓ 成功点击👍按钮');
+          successLikeCount++;
+          consecutiveFailCount = 0;  // 重置连续失败计数
+          
+          // 每10次点赞保存一次截图
+          if (successLikeCount % 10 === 0) {
+            await page.screenshot({ path: `auto-like-success-${successLikeCount}.png`, fullPage: false });
+            console.log(`✓ 已保存第 ${successLikeCount} 次点赞成功截图`);
+          }
+          
+          // 延迟1-2秒
+          const delay = Math.floor(Math.random() * 1000) + 1000;  // 1000-2000毫秒
+          console.log(`等待 ${delay}ms 后继续...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          console.log('❌ 点击👍按钮失败');
+          consecutiveFailCount++;
+        }
+      } else {
+        // 没有找到可点击的按钮，需要滚动页面
+        console.log('未找到可点击的👍按钮，准备滚动页面...');
+        
+        // 滚动页面
+        await page.evaluate(() => {
+          window.scrollBy(0, window.innerHeight * 0.7);  // 滚动70%视口高度
+        });
+        
+        scrollCount++;
+        console.log(`✓ 已滚动页面 ${scrollCount} 次`);
+        
+        // 等待新内容加载
+        console.log('等待新内容加载...');
+        await new Promise(resolve => setTimeout(resolve, 10000));
+        
+        // 每5次滚动保存一次截图
+        if (scrollCount % 5 === 0) {
+          await page.screenshot({ path: `auto-like-scroll-${scrollCount}.png`, fullPage: false });
+          console.log(`✓ 已保存第 ${scrollCount} 次滚动截图`);
+        }
+        
+        // 如果滚动了很多次但仍未找到可点击按钮，增加连续失败计数
+        if (scrollCount % 10 === 0 && scrollCount > 0) {
+          consecutiveFailCount++;
+          console.log(`警告: 已滚动 ${scrollCount} 次但未找到可点击按钮，增加失败计数到 ${consecutiveFailCount}`);
+        }
+      }
+    }
+    
+    // 保存最终状态截图
+    await page.screenshot({ path: 'auto-like-final.png', fullPage: true });
+    console.log('✓ 已保存最终状态截图到 auto-like-final.png');
+    
+    // 输出结果统计
+    if (successLikeCount >= 50) {
+      console.log(`✓ 已成功点赞 ${successLikeCount} 次，达到目标次数，自动结束`);
+    } else if (consecutiveFailCount >= 5) {
+      console.log(`⚠️ 连续失败 ${consecutiveFailCount} 次，自动结束`);
+    }
+    
+    console.log(`总计: 成功点赞 ${successLikeCount} 次, 滚动 ${scrollCount} 次`);
+    console.log('========== 自动点赞视频功能执行完毕 ==========');
+    
+    return {
+      success: true,
+      likeCount: successLikeCount,
+      error: null
+    };
+  } catch (error) {
+    console.error('❌ 自动点赞视频过程中出错:', error.message);
+    
+    // 尝试截图保存错误状态
+    try {
+      await page.screenshot({ path: 'auto-like-error.png', fullPage: true });
+      console.log('已保存错误截图到 auto-like-error.png');
+    } catch (screenshotError) {
+      console.error('保存错误截图失败:', screenshotError.message);
+    }
+    
+    return {
+      success: false,
+      likeCount: 0,
+      error: error.message
+    };
+  }
+}
+
 module.exports = {
   setupRequestInterception,
   launchBrowser,
@@ -1002,6 +1218,7 @@ module.exports = {
   openCivitaiEmail,
   clickSignInButton,
   checkAndSetNewestSorting,
+  autoLikeVideos,
   completeWorkflow,
   runBrowserTest
 };
