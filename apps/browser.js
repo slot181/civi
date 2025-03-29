@@ -1,4 +1,6 @@
 const puppeteer = require('puppeteer');
+const fs = require('fs');
+const path = require('path');
 
 /**
  * 配置请求拦截，过滤资源并修改请求头
@@ -423,119 +425,6 @@ async function loginToServ00Mail(browser, username, password) {
   }
 }
 
-/**
- * 运行浏览器测试流程
- * @returns {Promise<void>}
- */
-async function runBrowserTest() {
-  let browser;
-  
-  console.log('=============================================');
-  console.log('开始执行 Civitai 自动登录测试');
-  console.log('=============================================');
-  
-  try {
-    // 启动浏览器
-    console.log('正在启动浏览器...');
-    browser = await launchBrowser();
-    console.log('✓ 浏览器启动成功');
-    
-    const page = await browser.newPage();
-    console.log('✓ 创建新页面成功');
-    
-    // 设置视口大小，确保元素可见
-    await page.setViewport({ width: 1280, height: 800 });
-    console.log('✓ 设置视口大小: 1280x800');
-    
-    // 设置页面控制台消息监听，帮助调试
-    page.on('console', msg => console.log('浏览器控制台:', msg.text()));
-    
-    // 设置请求失败监听(调试使用)
-    // page.on('requestfailed', request => {
-    //   console.log(`❌ 请求失败: ${request.url()}`);
-    //   console.log(`  失败原因: ${request.failure().errorText}`);
-    // });
-    
-    // 设置更多的页面选项
-    await page.setDefaultNavigationTimeout(60000); // 设置导航超时为60秒
-    await page.setDefaultTimeout(30000); // 设置默认超时为30秒
-    
-    // 设置请求拦截，启用资源过滤以提高性能
-    // 这将阻止加载图片、字体、媒体等资源，减少网络负载
-    await setupRequestInterception(page, true);
-    
-    // 直接执行登录流程，不先访问主页
-    console.log('\n直接执行登录流程...');
-    
-    // 执行请求Civitai登录邮件流程，使用测试邮箱
-    const testEmail = 'buladinesh405@gmail.com';
-    console.log(`准备使用邮箱 ${testEmail} 请求Civitai登录邮件`);
-    const loginResult = await requestCivitaiLoginEmail(page, testEmail);
-    
-    if (loginResult.success) {
-      console.log('✓ Civitai登录邮件请求成功');
-      
-      // 获取登录后的页面状态
-      const postLoginInfo = await page.evaluate(() => {
-        return {
-          url: window.location.href,
-          title: document.title
-        };
-      });
-      console.log('登录后页面信息:', postLoginInfo);
-      
-      // 等待30秒后执行邮箱登录
-      console.log('\n等待30秒后执行邮箱登录...');
-      await new Promise(resolve => setTimeout(resolve, 30000));
-      console.log('✓ 等待完成，开始执行邮箱登录');
-      
-      // 执行完整工作流程
-      const mailUsername = 'slot@stonecoks.vip';
-      const mailPassword = 'ww..MM123456789';
-      console.log(`准备使用账户 ${mailUsername} 执行完整工作流程`);
-      const workflowResult = await completeWorkflow(browser, mailUsername, mailPassword);
-      
-      if (workflowResult.success) {
-        console.log('✓ 完整工作流程执行成功');
-      } else {
-        console.log('❌ 完整工作流程执行失败:', workflowResult.error);
-      }
-    } else {
-      console.log('❌ Civitai登录邮件请求失败:', loginResult.error);
-    }
-    
-    // 等待一段时间以便查看结果
-    console.log('等待5秒钟...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    
-    // 关闭浏览器
-    console.log('\n正在关闭浏览器...');
-    await browser.close();
-    console.log('✓ 浏览器已关闭');
-    
-    console.log('=============================================');
-    console.log('测试执行完毕');
-    console.log('=============================================');
-  } catch (error) {
-    console.error('❌ 执行过程中发生错误:', error.message);
-    console.error('错误堆栈:', error.stack);
-    
-    // 确保浏览器关闭
-    try {
-      if (browser) {
-        console.log('\n正在关闭浏览器...');
-        await browser.close();
-        console.log('✓ 浏览器已关闭');
-      }
-    } catch (closeError) {
-      console.error('❌ 关闭浏览器时出错:', closeError.message);
-    }
-    
-    console.log('=============================================');
-    console.log('测试执行失败');
-    console.log('=============================================');
-  }
-}
 
 /**
  * 在邮箱中查找Civitai邮件
@@ -776,226 +665,6 @@ async function clickSignInButton(page) {
 }
 
 /**
- * 检查并设置Civitai页面的排序选项为"Newest"
- * @param {import('puppeteer').Page} page 页面实例
- * @returns {Promise<{success: boolean, error: string|null}>} 操作结果
- */
-async function checkAndSetNewestSorting(page) {
-  try {
-    console.log('========== 开始检查并设置排序选项 ==========');
-    
-    // 等待页面完全加载
-    console.log('等待页面完全加载...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    
-    // 检查当前排序选项
-    console.log('正在检查当前排序选项...');
-    const isSortedByNewest = await page.evaluate(() => {
-      // 查找排序下拉菜单按钮
-      const sortDropdownButtons = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'));
-      
-      // 查找当前激活的排序按钮（通常会有特殊的样式或属性）
-      const activeSortButton = sortDropdownButtons.find(button => {
-        // 检查按钮文本是否包含"Newest"
-        const buttonText = button.textContent || '';
-        
-        // 检查是否有激活状态的指示器
-        // 1. 检查是否有特殊的激活类
-        const hasActiveClass = button.classList.contains('active') ||
-                              button.classList.contains('selected') ||
-                              button.classList.contains('bg-gray-2') ||
-                              button.classList.contains('bg-dark-4');
-                              
-        // 2. 检查是否有激活状态的属性
-        const hasActiveAttribute = button.getAttribute('data-active') === 'true' ||
-                                  button.getAttribute('aria-selected') === 'true';
-        
-        // 3. 检查是否有子元素表示选中状态（如勾选图标）
-        const hasCheckIcon = button.querySelector('.tabler-icon-check') !== null;
-        
-        // 如果按钮文本包含"Newest"并且有激活状态的指示，则认为当前已按"Newest"排序
-        return buttonText.includes('Newest') && (hasActiveClass || hasActiveAttribute || hasCheckIcon);
-      });
-      
-      // 如果找不到明确的激活状态指示，则默认为未按"Newest"排序
-      return !!activeSortButton;
-    });
-    
-    if (isSortedByNewest) {
-      console.log('✓ 当前已经按"Newest"排序');
-      return {
-        success: true,
-        error: null
-      };
-    }
-    
-    console.log('当前不是按"Newest"排序，准备点击排序按钮...');
-    
-    // 点击排序按钮打开下拉菜单
-    const clickSortButton = await page.evaluate(() => {
-      // 查找包含排序图标的按钮
-      const sortButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
-      const sortButton = sortButtons.find(button => {
-        return button.querySelector('svg[class*="tabler-icon-sort-descending"]') !== null ||
-               button.querySelector('svg[class*="tabler-icon-chevron-down"]') !== null;
-      });
-      
-      if (sortButton) {
-        sortButton.click();
-        return true;
-      }
-      return false;
-    });
-    
-    if (!clickSortButton) {
-      console.error('❌ 未找到排序按钮');
-      await page.screenshot({ path: 'sort-button-not-found.png', fullPage: true });
-      throw new Error('未找到排序按钮');
-    }
-    
-    console.log('✓ 已点击排序按钮');
-    
-    // 等待下拉菜单出现
-    console.log('等待下拉菜单出现...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // 等待下拉菜单完全加载
-    console.log('等待下拉菜单完全加载...');
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    // 在下拉菜单中点击"Newest"选项
-    console.log('正在查找并点击"Newest"选项...');
-    
-    // 截图保存下拉菜单状态，帮助调试
-    await page.screenshot({ path: 'dropdown-menu-state.png', fullPage: false });
-    console.log('✓ 已保存下拉菜单状态截图');
-    
-    // 使用更可靠的方法查找并点击"Newest"选项
-    const clickNewestOption = await page.evaluate(() => {
-      // 记录当前DOM状态，帮助调试
-      const menuHTML = document.querySelector('.mantine-Menu-dropdown')?.outerHTML || '未找到下拉菜单';
-      console.log('下拉菜单HTML:', menuHTML);
-      
-      // 方法1: 使用更精确的选择器
-      let newestOption = null;
-      
-      // 查找所有菜单项
-      const menuItems = Array.from(document.querySelectorAll('.mantine-Menu-item'));
-      console.log('找到的菜单项数量:', menuItems.length);
-      
-      if (menuItems.length > 0) {
-        // 记录所有菜单项的文本内容
-        const menuTexts = menuItems.map(item => item.textContent || '').join(', ');
-        console.log('菜单项内容:', menuTexts);
-        
-        // 查找包含"Newest"文本的菜单项
-        for (const item of menuItems) {
-          const itemText = item.textContent || '';
-          if (itemText.includes('Newest')) {
-            newestOption = item;
-            console.log('找到包含Newest的菜单项:', itemText);
-            break;
-          }
-        }
-      }
-      
-      // 方法2: 如果方法1失败，尝试使用XPath
-      if (!newestOption) {
-        try {
-          const xpathResult = document.evaluate(
-            "//button[contains(@class, 'mantine-Menu-item')]//div[contains(@class, 'mantine-Menu-itemLabel') and text()='Newest']/parent::button",
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-          );
-          
-          if (xpathResult.singleNodeValue) {
-            newestOption = xpathResult.singleNodeValue;
-            console.log('通过XPath找到Newest选项');
-          }
-        } catch (e) {
-          console.log('XPath查找失败:', e.message);
-        }
-      }
-      
-      // 方法3: 如果前两种方法都失败，尝试直接通过文本内容查找
-      if (!newestOption) {
-        const allButtons = Array.from(document.querySelectorAll('button'));
-        for (const button of allButtons) {
-          if ((button.textContent || '').includes('Newest')) {
-            newestOption = button;
-            console.log('通过文本内容找到Newest按钮');
-            break;
-          }
-        }
-      }
-      
-      // 如果找到了Newest选项，点击它
-      if (newestOption) {
-        console.log('找到Newest选项，准备点击');
-        // 使用更可靠的点击方法
-        try {
-          // 尝试使用click()方法
-          newestOption.click();
-          console.log('使用click()方法点击成功');
-          return true;
-        } catch (clickError) {
-          console.log('click()方法失败，尝试备用方法');
-          try {
-            // 尝试使用MouseEvent
-            const event = new MouseEvent('click', {
-              view: window,
-              bubbles: true,
-              cancelable: true
-            });
-            newestOption.dispatchEvent(event);
-            console.log('使用MouseEvent点击成功');
-            return true;
-          } catch (eventError) {
-            console.log('所有点击方法都失败');
-            return false;
-          }
-        }
-      }
-      
-      console.log('未找到Newest选项');
-      return false;
-    });
-    
-    if (!clickNewestOption) {
-      console.error('❌ 未找到"Newest"选项');
-      await page.screenshot({ path: 'newest-option-not-found.png', fullPage: true });
-      throw new Error('未找到"Newest"选项');
-    }
-    
-    console.log('✓ 已点击"Newest"选项');
-    
-    // 等待排序应用
-    console.log('等待排序应用...');
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    // 截图保存最终结果
-    await page.screenshot({ path: 'newest-sorting-applied.png', fullPage: true });
-    console.log('✓ 已保存排序应用后截图到 newest-sorting-applied.png');
-    
-    console.log('========== 排序选项设置完成 ==========');
-    
-    return {
-      success: true,
-      error: null
-    };
-  } catch (error) {
-    console.error('❌ 检查并设置排序选项过程中出错:', error.message);
-    
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-}
-
-/**
  * 完成从邮箱登录到Civitai登录的完整工作流程
  * @param {import('puppeteer').Browser} browser 浏览器实例
  * @param {string} username 邮箱用户名
@@ -1069,17 +738,6 @@ async function completeWorkflow(browser, username, password) {
     // 截图保存视频页面状态
     await page.screenshot({ path: 'civitai-videos-page.png', fullPage: true });
     console.log('✓ 已保存视频页面截图到 civitai-videos-page.png');
-    
-    // 检查并设置排序选项为"Newest"
-    console.log('正在检查并设置排序选项...');
-    const sortingResult = await checkAndSetNewestSorting(page);
-    
-    if (!sortingResult.success) {
-      console.warn('⚠️ 设置排序选项失败:', sortingResult.error);
-      // 继续执行，不中断工作流程
-    } else {
-      console.log('✓ 成功设置排序选项为"Newest"');
-    }
     
     // 执行自动点赞视频功能
     console.log('正在执行自动点赞视频功能...');
@@ -1379,6 +1037,226 @@ async function autoLikeVideos(page) {
   }
 }
 
+/**
+ * 运行多账号浏览器测试流程
+ * @param {Object} config 邮箱配置对象，包含邮箱列表和最大重试次数
+ * @returns {Promise<void>}
+ */
+async function runMultiAccountTest(config) {
+  let browser;
+  
+  console.log('=============================================');
+  console.log('开始执行 Civitai 多账号自动点赞测试');
+  console.log(`共有 ${config.emails.length} 个账号待测试`);
+  console.log(`最大重试次数: ${config.maxRetries}`);
+  console.log('=============================================');
+  
+  // 创建结果目录
+  const resultsDir = path.join(__dirname, '..', 'results');
+  if (!fs.existsSync(resultsDir)) {
+    fs.mkdirSync(resultsDir, { recursive: true });
+    console.log(`✓ 已创建结果保存目录: ${resultsDir}`);
+  }
+  
+  // 创建结果日志文件
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const logFilePath = path.join(resultsDir, `test-results-${timestamp}.log`);
+  
+  // 记录测试结果
+  const testResults = {
+    startTime: new Date().toISOString(),
+    totalAccounts: config.emails.length,
+    successCount: 0,
+    failureCount: 0,
+    skippedCount: 0,
+    accountResults: []
+  };
+  
+  try {
+    // 启动浏览器
+    console.log('正在启动浏览器...');
+    browser = await launchBrowser();
+    console.log('✓ 浏览器启动成功');
+    
+    // 邮箱服务账号信息
+    const mailUsername = 'slot@stonecoks.vip';
+    const mailPassword = 'ww..MM123456789';
+    
+    // 循环处理每个邮箱账号
+    for (let i = 0; i < config.emails.length; i++) {
+      const emailAccount = config.emails[i];
+      const email = emailAccount.email;
+      const description = emailAccount.description || `账号${i+1}`;
+      
+      console.log(`\n=============================================`);
+      console.log(`开始测试账号 ${i+1}/${config.emails.length}: ${email} (${description})`);
+      console.log(`=============================================`);
+      
+      const accountResult = {
+        email: email,
+        description: description,
+        attempts: [],
+        finalStatus: 'pending'
+      };
+      
+      let success = false;
+      let attemptCount = 0;
+      
+      // 尝试执行测试，最多重试maxRetries次
+      while (!success && attemptCount < config.maxRetries) {
+        attemptCount++;
+        console.log(`\n开始第 ${attemptCount}/${config.maxRetries} 次尝试...`);
+        
+        const attemptResult = {
+          attemptNumber: attemptCount,
+          startTime: new Date().toISOString(),
+          endTime: null,
+          success: false,
+          error: null
+        };
+        
+        try {
+          // 创建新页面
+          const page = await browser.newPage();
+          console.log('✓ 创建新页面成功');
+          
+          // 设置视口大小，确保元素可见
+          await page.setViewport({ width: 1280, height: 800 });
+          console.log('✓ 设置视口大小: 1280x800');
+          
+          // 设置页面控制台消息监听，帮助调试
+          page.on('console', msg => console.log('浏览器控制台:', msg.text()));
+          
+          // 设置更多的页面选项
+          await page.setDefaultNavigationTimeout(60000); // 设置导航超时为60秒
+          await page.setDefaultTimeout(30000); // 设置默认超时为30秒
+          
+          // 设置请求拦截，启用资源过滤以提高性能
+          await setupRequestInterception(page, true);
+          
+          // 执行请求Civitai登录邮件流程
+          console.log(`准备使用邮箱 ${email} 请求Civitai登录邮件`);
+          const loginResult = await requestCivitaiLoginEmail(page, email);
+          
+          if (loginResult.success) {
+            console.log('✓ Civitai登录邮件请求成功');
+            
+            // 等待30秒后执行邮箱登录
+            console.log('\n等待30秒后执行邮箱登录...');
+            await new Promise(resolve => setTimeout(resolve, 30000));
+            console.log('✓ 等待完成，开始执行邮箱登录');
+            
+            // 执行完整工作流程
+            console.log(`准备使用账户 ${mailUsername} 执行完整工作流程`);
+            const workflowResult = await completeWorkflow(browser, mailUsername, mailPassword);
+            
+            if (workflowResult.success) {
+              console.log('✓ 完整工作流程执行成功');
+              success = true;
+              attemptResult.success = true;
+            } else {
+              console.log('❌ 完整工作流程执行失败:', workflowResult.error);
+              attemptResult.error = `工作流程失败: ${workflowResult.error}`;
+            }
+          } else {
+            console.log('❌ Civitai登录邮件请求失败:', loginResult.error);
+            attemptResult.error = `登录邮件请求失败: ${loginResult.error}`;
+          }
+          
+          // 关闭当前页面
+          await page.close();
+          console.log('✓ 已关闭当前页面');
+          
+        } catch (error) {
+          console.error(`❌ 第 ${attemptCount} 次尝试出错:`, error.message);
+          attemptResult.error = error.message;
+        }
+        
+        // 记录本次尝试结果
+        attemptResult.endTime = new Date().toISOString();
+        accountResult.attempts.push(attemptResult);
+        
+        // 如果成功，跳出循环
+        if (success) {
+          console.log(`✓ 账号 ${email} 测试成功！`);
+          accountResult.finalStatus = 'success';
+          testResults.successCount++;
+          break;
+        }
+        
+        // 如果已达到最大重试次数，标记为失败
+        if (attemptCount >= config.maxRetries) {
+          console.log(`❌ 账号 ${email} 已达到最大重试次数 ${config.maxRetries}，测试失败`);
+          accountResult.finalStatus = 'failed';
+          testResults.failureCount++;
+        } else {
+          // 否则，等待一段时间后重试
+          const retryDelay = 10000; // 10秒
+          console.log(`将在 ${retryDelay/1000} 秒后进行第 ${attemptCount+1} 次尝试...`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+      }
+      
+      // 将账号结果添加到总结果中
+      testResults.accountResults.push(accountResult);
+      
+      // 保存当前结果到日志文件
+      fs.writeFileSync(logFilePath, JSON.stringify(testResults, null, 2), 'utf8');
+      console.log(`✓ 已保存测试结果到: ${logFilePath}`);
+      
+      // 每个账号测试完成后等待一段时间
+      if (i < config.emails.length - 1) {
+        const accountDelay = 5000; // 5秒
+        console.log(`等待 ${accountDelay/1000} 秒后测试下一个账号...`);
+        await new Promise(resolve => setTimeout(resolve, accountDelay));
+      }
+    }
+    
+    // 所有账号测试完成
+    testResults.endTime = new Date().toISOString();
+    console.log('\n=============================================');
+    console.log('所有账号测试完成');
+    console.log(`成功: ${testResults.successCount}/${testResults.totalAccounts}`);
+    console.log(`失败: ${testResults.failureCount}/${testResults.totalAccounts}`);
+    console.log(`跳过: ${testResults.skippedCount}/${testResults.totalAccounts}`);
+    console.log('=============================================');
+    
+    // 保存最终结果到日志文件
+    fs.writeFileSync(logFilePath, JSON.stringify(testResults, null, 2), 'utf8');
+    console.log(`✓ 已保存最终测试结果到: ${logFilePath}`);
+    
+    // 关闭浏览器
+    console.log('\n正在关闭浏览器...');
+    await browser.close();
+    console.log('✓ 浏览器已关闭');
+    
+  } catch (error) {
+    console.error('❌ 多账号测试过程中发生错误:', error.message);
+    console.error('错误堆栈:', error.stack);
+    
+    // 确保浏览器关闭
+    try {
+      if (browser) {
+        console.log('\n正在关闭浏览器...');
+        await browser.close();
+        console.log('✓ 浏览器已关闭');
+      }
+    } catch (closeError) {
+      console.error('❌ 关闭浏览器时出错:', closeError.message);
+    }
+    
+    // 保存错误结果到日志文件
+    testResults.endTime = new Date().toISOString();
+    testResults.error = error.message;
+    fs.writeFileSync(logFilePath, JSON.stringify(testResults, null, 2), 'utf8');
+    console.log(`✓ 已保存错误测试结果到: ${logFilePath}`);
+    
+    console.log('=============================================');
+    console.log('多账号测试执行失败');
+    console.log('=============================================');
+  }
+}
+
 module.exports = {
   setupRequestInterception,
   launchBrowser,
@@ -1388,8 +1266,7 @@ module.exports = {
   findCivitaiEmail,
   openCivitaiEmail,
   clickSignInButton,
-  checkAndSetNewestSorting,
   autoLikeVideos,
   completeWorkflow,
-  runBrowserTest
+  runMultiAccountTest
 };

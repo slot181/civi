@@ -1,0 +1,21 @@
+{
+  "maxRetries": 2,
+  "emails": [
+    {
+      "email": "arena1516611@gmail.com",
+      "description": "测试账号1"
+    },
+    {
+      "email": "test1@example.com",
+      "description": "测试账号2"
+    },
+    {
+      "email": "test2@example.com",
+      "description": "测试账号3"
+    },
+    {
+      "email": "test3@example.com",
+      "description": "测试账号4"
+    }
+  ]
+}
