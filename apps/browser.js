@@ -1048,6 +1048,63 @@ async function autoLikeVideos(page) {
     console.log('等待页面内容加载...');
     await new Promise(resolve => setTimeout(resolve, 10000));
     
+    // 点击打开点赞栏目的按钮
+    console.log('正在查找并点击打开点赞栏目的按钮...');
+    const openReactionResult = await page.evaluate(() => {
+      // 查找包含加号和笑脸图标的按钮
+      const buttons = Array.from(document.querySelectorAll('button[data-button="true"]'));
+      const reactionButton = buttons.find(button => {
+        // 检查按钮是否包含SVG图标
+        const svgs = button.querySelectorAll('svg');
+        if (svgs.length >= 2) {
+          // 检查是否包含加号图标
+          const hasPlusIcon = Array.from(svgs).some(svg =>
+            svg.classList.contains('tabler-icon-plus') ||
+            svg.outerHTML.includes('tabler-icon-plus')
+          );
+          
+          // 检查是否包含笑脸图标
+          const hasSmileIcon = Array.from(svgs).some(svg =>
+            svg.classList.contains('tabler-icon-mood-smile') ||
+            svg.outerHTML.includes('tabler-icon-mood-smile')
+          );
+          
+          return hasPlusIcon && hasSmileIcon;
+        }
+        return false;
+      });
+      
+      if (reactionButton) {
+        console.log('找到点赞栏目按钮，准备点击');
+        reactionButton.click();
+        return true;
+      }
+      
+      // 尝试通过class查找
+      const classFindButton = document.querySelector('button.mantine-fjh1u7[data-button="true"]');
+      if (classFindButton) {
+        console.log('通过class找到点赞栏目按钮，准备点击');
+        classFindButton.click();
+        return true;
+      }
+      
+      return false;
+    });
+    
+    if (openReactionResult) {
+      console.log('✓ 成功点击打开点赞栏目按钮');
+      
+      // 等待点赞栏目出现
+      console.log('等待点赞栏目出现...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // 截图保存点赞栏目状态
+      await page.screenshot({ path: 'reaction-panel-opened.png', fullPage: false });
+      console.log('✓ 已保存点赞栏目截图到 reaction-panel-opened.png');
+    } else {
+      console.warn('⚠️ 未找到点赞栏目按钮，将直接尝试点赞');
+    }
+    
     // 初始化计数器
     let successLikeCount = 0;  // 成功点赞计数
     let consecutiveFailCount = 0;  // 连续失败计数
