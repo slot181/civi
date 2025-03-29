@@ -319,7 +319,7 @@ async function loginToServ00Mail(browser, username, password) {
     // 等待登录表单加载
     console.log('正在等待登录表单加载...');
     try {
-      await page.waitForSelector('#rcmloginuser', { timeout: 20000 });
+      await page.waitForSelector('#rcmloginuser', { timeout: 30000 });
       console.log('✓ 登录表单已加载');
     } catch (formError) {
       console.error('❌ 等待登录表单超时:', formError.message);
@@ -1043,8 +1043,6 @@ async function autoLikeVideos(page) {
  * @returns {Promise<void>}
  */
 async function runMultiAccountTest(config) {
-  let browser;
-  
   console.log('=============================================');
   console.log('开始执行 Civitai 多账号自动点赞测试');
   console.log(`共有 ${config.emails.length} 个账号待测试`);
@@ -1072,36 +1070,32 @@ async function runMultiAccountTest(config) {
     accountResults: []
   };
   
-  try {
-    // 启动浏览器
-    console.log('正在启动浏览器...');
-    browser = await launchBrowser();
-    console.log('✓ 浏览器启动成功');
+  // 邮箱服务账号信息
+  const mailUsername = 'slot@stonecoks.vip';
+  const mailPassword = 'ww..MM123456789';
+  
+  // 循环处理每个邮箱账号
+  for (let i = 0; i < config.emails.length; i++) {
+    const emailAccount = config.emails[i];
+    const email = emailAccount.email;
+    const description = emailAccount.description || `账号${i+1}`;
     
-    // 邮箱服务账号信息
-    const mailUsername = 'slot@stonecoks.vip';
-    const mailPassword = 'ww..MM123456789';
+    console.log(`\n=============================================`);
+    console.log(`开始测试账号 ${i+1}/${config.emails.length}: ${email} (${description})`);
+    console.log(`=============================================`);
     
-    // 循环处理每个邮箱账号
-    for (let i = 0; i < config.emails.length; i++) {
-      const emailAccount = config.emails[i];
-      const email = emailAccount.email;
-      const description = emailAccount.description || `账号${i+1}`;
-      
-      console.log(`\n=============================================`);
-      console.log(`开始测试账号 ${i+1}/${config.emails.length}: ${email} (${description})`);
-      console.log(`=============================================`);
-      
-      const accountResult = {
-        email: email,
-        description: description,
-        attempts: [],
-        finalStatus: 'pending'
-      };
-      
-      let success = false;
-      let attemptCount = 0;
-      
+    const accountResult = {
+      email: email,
+      description: description,
+      attempts: [],
+      finalStatus: 'pending'
+    };
+    
+    let success = false;
+    let attemptCount = 0;
+    let browser = null;
+    
+    try {
       // 尝试执行测试，最多重试maxRetries次
       while (!success && attemptCount < config.maxRetries) {
         attemptCount++;
@@ -1116,6 +1110,11 @@ async function runMultiAccountTest(config) {
         };
         
         try {
+          // 每次尝试都启动一个新的浏览器实例，确保没有缓存
+          console.log('正在启动新的浏览器实例...');
+          browser = await launchBrowser();
+          console.log('✓ 浏览器启动成功');
+          
           // 创建新页面
           const page = await browser.newPage();
           console.log('✓ 创建新页面成功');
@@ -1162,14 +1161,17 @@ async function runMultiAccountTest(config) {
             console.log('❌ Civitai登录邮件请求失败:', loginResult.error);
             attemptResult.error = `登录邮件请求失败: ${loginResult.error}`;
           }
-          
-          // 关闭当前页面
-          await page.close();
-          console.log('✓ 已关闭当前页面');
-          
         } catch (error) {
           console.error(`❌ 第 ${attemptCount} 次尝试出错:`, error.message);
           attemptResult.error = error.message;
+        } finally {
+          // 无论成功还是失败，都关闭当前浏览器实例，清除所有缓存
+          if (browser) {
+            console.log('\n正在关闭浏览器实例，清除缓存...');
+            await browser.close();
+            console.log('✓ 浏览器已关闭，缓存已清除');
+            browser = null;
+          }
         }
         
         // 记录本次尝试结果
@@ -1196,65 +1198,54 @@ async function runMultiAccountTest(config) {
           await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
       }
+    } catch (error) {
+      console.error(`❌ 账号 ${email} 测试过程中发生错误:`, error.message);
+      console.error('错误堆栈:', error.stack);
       
-      // 将账号结果添加到总结果中
-      testResults.accountResults.push(accountResult);
-      
-      // 保存当前结果到日志文件
-      fs.writeFileSync(logFilePath, JSON.stringify(testResults, null, 2), 'utf8');
-      console.log(`✓ 已保存测试结果到: ${logFilePath}`);
-      
-      // 每个账号测试完成后等待一段时间
-      if (i < config.emails.length - 1) {
-        const accountDelay = 5000; // 5秒
-        console.log(`等待 ${accountDelay/1000} 秒后测试下一个账号...`);
-        await new Promise(resolve => setTimeout(resolve, accountDelay));
-      }
-    }
-    
-    // 所有账号测试完成
-    testResults.endTime = new Date().toISOString();
-    console.log('\n=============================================');
-    console.log('所有账号测试完成');
-    console.log(`成功: ${testResults.successCount}/${testResults.totalAccounts}`);
-    console.log(`失败: ${testResults.failureCount}/${testResults.totalAccounts}`);
-    console.log(`跳过: ${testResults.skippedCount}/${testResults.totalAccounts}`);
-    console.log('=============================================');
-    
-    // 保存最终结果到日志文件
-    fs.writeFileSync(logFilePath, JSON.stringify(testResults, null, 2), 'utf8');
-    console.log(`✓ 已保存最终测试结果到: ${logFilePath}`);
-    
-    // 关闭浏览器
-    console.log('\n正在关闭浏览器...');
-    await browser.close();
-    console.log('✓ 浏览器已关闭');
-    
-  } catch (error) {
-    console.error('❌ 多账号测试过程中发生错误:', error.message);
-    console.error('错误堆栈:', error.stack);
-    
-    // 确保浏览器关闭
-    try {
+      // 确保浏览器关闭
       if (browser) {
-        console.log('\n正在关闭浏览器...');
-        await browser.close();
-        console.log('✓ 浏览器已关闭');
+        try {
+          console.log('\n正在关闭浏览器...');
+          await browser.close();
+          console.log('✓ 浏览器已关闭');
+        } catch (closeError) {
+          console.error('❌ 关闭浏览器时出错:', closeError.message);
+        }
       }
-    } catch (closeError) {
-      console.error('❌ 关闭浏览器时出错:', closeError.message);
+      
+      // 标记账号为失败
+      accountResult.finalStatus = 'failed';
+      accountResult.error = error.message;
+      testResults.failureCount++;
     }
     
-    // 保存错误结果到日志文件
-    testResults.endTime = new Date().toISOString();
-    testResults.error = error.message;
-    fs.writeFileSync(logFilePath, JSON.stringify(testResults, null, 2), 'utf8');
-    console.log(`✓ 已保存错误测试结果到: ${logFilePath}`);
+    // 将账号结果添加到总结果中
+    testResults.accountResults.push(accountResult);
     
-    console.log('=============================================');
-    console.log('多账号测试执行失败');
-    console.log('=============================================');
+    // 保存当前结果到日志文件
+    fs.writeFileSync(logFilePath, JSON.stringify(testResults, null, 2), 'utf8');
+    console.log(`✓ 已保存测试结果到: ${logFilePath}`);
+    
+    // 每个账号测试完成后等待一段时间
+    if (i < config.emails.length - 1) {
+      const accountDelay = 5000; // 5秒
+      console.log(`等待 ${accountDelay/1000} 秒后测试下一个账号...`);
+      await new Promise(resolve => setTimeout(resolve, accountDelay));
+    }
   }
+  
+  // 所有账号测试完成
+  testResults.endTime = new Date().toISOString();
+  console.log('\n=============================================');
+  console.log('所有账号测试完成');
+  console.log(`成功: ${testResults.successCount}/${testResults.totalAccounts}`);
+  console.log(`失败: ${testResults.failureCount}/${testResults.totalAccounts}`);
+  console.log(`跳过: ${testResults.skippedCount}/${testResults.totalAccounts}`);
+  console.log('=============================================');
+  
+  // 保存最终结果到日志文件
+  fs.writeFileSync(logFilePath, JSON.stringify(testResults, null, 2), 'utf8');
+  console.log(`✓ 已保存最终测试结果到: ${logFilePath}`);
 }
 
 module.exports = {
