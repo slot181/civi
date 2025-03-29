@@ -791,16 +791,34 @@ async function checkAndSetNewestSorting(page) {
     // 检查当前排序选项
     console.log('正在检查当前排序选项...');
     const isSortedByNewest = await page.evaluate(() => {
-      // 查找排序按钮，包含"Newest"文本和排序图标
-      const sortButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
-      const sortButton = sortButtons.find(button => {
+      // 查找排序下拉菜单按钮
+      const sortDropdownButtons = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'));
+      
+      // 查找当前激活的排序按钮（通常会有特殊的样式或属性）
+      const activeSortButton = sortDropdownButtons.find(button => {
+        // 检查按钮文本是否包含"Newest"
         const buttonText = button.textContent || '';
-        return buttonText.includes('Newest') &&
-               button.querySelector('svg') !== null;
+        
+        // 检查是否有激活状态的指示器
+        // 1. 检查是否有特殊的激活类
+        const hasActiveClass = button.classList.contains('active') ||
+                              button.classList.contains('selected') ||
+                              button.classList.contains('bg-gray-2') ||
+                              button.classList.contains('bg-dark-4');
+                              
+        // 2. 检查是否有激活状态的属性
+        const hasActiveAttribute = button.getAttribute('data-active') === 'true' ||
+                                  button.getAttribute('aria-selected') === 'true';
+        
+        // 3. 检查是否有子元素表示选中状态（如勾选图标）
+        const hasCheckIcon = button.querySelector('.tabler-icon-check') !== null;
+        
+        // 如果按钮文本包含"Newest"并且有激活状态的指示，则认为当前已按"Newest"排序
+        return buttonText.includes('Newest') && (hasActiveClass || hasActiveAttribute || hasCheckIcon);
       });
       
-      // 如果找到包含"Newest"的排序按钮，则认为已经是按"Newest"排序
-      return !!sortButton;
+      // 如果找不到明确的激活状态指示，则默认为未按"Newest"排序
+      return !!activeSortButton;
     });
     
     if (isSortedByNewest) {
@@ -1201,10 +1219,51 @@ async function autoLikeVideos(page) {
         // 没有找到可点击的按钮，需要滚动页面
         console.log('未找到可点击的👍按钮，准备滚动页面...');
         
-        // 滚动页面
-        await page.evaluate(() => {
-          window.scrollBy(0, window.innerHeight * 0.7);  // 滚动70%视口高度
-        });
+        // 滚动页面 - 使用更可靠的滚动方法
+        try {
+          // 方法1: 使用页面的滚动方法
+          await page.evaluate(() => {
+            // 使用更大的滚动距离，确保页面有明显变化
+            window.scrollBy(0, window.innerHeight * 0.9);
+            
+            // 记录滚动前后的位置，用于验证滚动是否有效
+            return {
+              beforeScroll: window.pageYOffset || document.documentElement.scrollTop,
+              afterScroll: window.pageYOffset || document.documentElement.scrollTop
+            };
+          }).then(result => {
+            console.log(`滚动前位置: ${result.beforeScroll}px, 滚动后位置: ${result.afterScroll}px`);
+            if (result.afterScroll <= result.beforeScroll) {
+              throw new Error('页面没有有效滚动，尝试备用方法');
+            }
+          });
+        } catch (scrollError) {
+          console.log('使用备用滚动方法...');
+          // 方法2: 使用键盘按键模拟滚动
+          await page.keyboard.press('PageDown');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          // 方法3: 尝试点击页面底部元素
+          await page.evaluate(() => {
+            // 查找页面底部的元素并尝试点击或聚焦
+            const elements = Array.from(document.querySelectorAll('*'));
+            const bottomElements = elements
+              .filter(el => {
+                const rect = el.getBoundingClientRect();
+                return rect.top > window.innerHeight * 0.8 && rect.bottom <= window.innerHeight * 1.2;
+              })
+              .sort((a, b) => {
+                const rectA = a.getBoundingClientRect();
+                const rectB = b.getBoundingClientRect();
+                return rectB.top - rectA.top; // 按从下到上的顺序排序
+              });
+            
+            if (bottomElements.length > 0) {
+              bottomElements[0].scrollIntoView({ behavior: 'smooth', block: 'end' });
+              return true;
+            }
+            return false;
+          });
+        }
         
         scrollCount++;
         console.log(`✓ 已滚动页面 ${scrollCount} 次`);
@@ -1213,14 +1272,12 @@ async function autoLikeVideos(page) {
         console.log('等待新内容加载...');
         await new Promise(resolve => setTimeout(resolve, 10000));
         
-        // 每5次滚动保存一次截图
-        if (scrollCount % 5 === 0) {
-          await page.screenshot({ path: `auto-like-scroll-${scrollCount}.png`, fullPage: false });
-          console.log(`✓ 已保存第 ${scrollCount} 次滚动截图`);
-        }
+        // 每次滚动都保存截图，以便验证滚动是否有效
+        await page.screenshot({ path: `auto-like-scroll-${scrollCount}.png`, fullPage: false });
+        console.log(`✓ 已保存第 ${scrollCount} 次滚动截图`);
         
-        // 如果滚动了很多次但仍未找到可点击按钮，增加连续失败计数
-        if (scrollCount % 10 === 0 && scrollCount > 0) {
+        // 如果滚动3次还未找到可点击按钮，增加连续失败计数
+        if (scrollCount % 3 === 0 && scrollCount > 0) {
           consecutiveFailCount++;
           console.log(`警告: 已滚动 ${scrollCount} 次但未找到可点击按钮，增加失败计数到 ${consecutiveFailCount}`);
         }
