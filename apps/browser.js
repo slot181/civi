@@ -859,46 +859,107 @@ async function checkAndSetNewestSorting(page) {
     console.log('等待下拉菜单出现...');
     await new Promise(resolve => setTimeout(resolve, 2000));
     
+    // 等待下拉菜单完全加载
+    console.log('等待下拉菜单完全加载...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
     // 在下拉菜单中点击"Newest"选项
     console.log('正在查找并点击"Newest"选项...');
+    
+    // 截图保存下拉菜单状态，帮助调试
+    await page.screenshot({ path: 'dropdown-menu-state.png', fullPage: false });
+    console.log('✓ 已保存下拉菜单状态截图');
+    
+    // 使用更可靠的方法查找并点击"Newest"选项
     const clickNewestOption = await page.evaluate(() => {
-      // 查找下拉菜单中的"Newest"选项
-      // 首先查找所有菜单项
+      // 记录当前DOM状态，帮助调试
+      const menuHTML = document.querySelector('.mantine-Menu-dropdown')?.outerHTML || '未找到下拉菜单';
+      console.log('下拉菜单HTML:', menuHTML);
+      
+      // 方法1: 使用更精确的选择器
+      let newestOption = null;
+      
+      // 查找所有菜单项
       const menuItems = Array.from(document.querySelectorAll('.mantine-Menu-item'));
-      
-      // 然后查找包含"Newest"文本的菜单项
-      const newestOption = menuItems.find(item => {
-        // 查找菜单项内部的标签元素
-        const labelElement = item.querySelector('.mantine-Menu-itemLabel');
-        if (labelElement) {
-          const labelText = labelElement.textContent || '';
-          return labelText.trim() === 'Newest';
-        }
-        return false;
-      });
-      
       console.log('找到的菜单项数量:', menuItems.length);
+      
       if (menuItems.length > 0) {
-        console.log('菜单项内容:', menuItems.map(item => item.textContent).join(', '));
+        // 记录所有菜单项的文本内容
+        const menuTexts = menuItems.map(item => item.textContent || '').join(', ');
+        console.log('菜单项内容:', menuTexts);
+        
+        // 查找包含"Newest"文本的菜单项
+        for (const item of menuItems) {
+          const itemText = item.textContent || '';
+          if (itemText.includes('Newest')) {
+            newestOption = item;
+            console.log('找到包含Newest的菜单项:', itemText);
+            break;
+          }
+        }
       }
       
+      // 方法2: 如果方法1失败，尝试使用XPath
+      if (!newestOption) {
+        try {
+          const xpathResult = document.evaluate(
+            "//button[contains(@class, 'mantine-Menu-item')]//div[contains(@class, 'mantine-Menu-itemLabel') and text()='Newest']/parent::button",
+            document,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null
+          );
+          
+          if (xpathResult.singleNodeValue) {
+            newestOption = xpathResult.singleNodeValue;
+            console.log('通过XPath找到Newest选项');
+          }
+        } catch (e) {
+          console.log('XPath查找失败:', e.message);
+        }
+      }
+      
+      // 方法3: 如果前两种方法都失败，尝试直接通过文本内容查找
+      if (!newestOption) {
+        const allButtons = Array.from(document.querySelectorAll('button'));
+        for (const button of allButtons) {
+          if ((button.textContent || '').includes('Newest')) {
+            newestOption = button;
+            console.log('通过文本内容找到Newest按钮');
+            break;
+          }
+        }
+      }
+      
+      // 如果找到了Newest选项，点击它
       if (newestOption) {
         console.log('找到Newest选项，准备点击');
-        newestOption.click();
-        return true;
+        // 使用更可靠的点击方法
+        try {
+          // 尝试使用click()方法
+          newestOption.click();
+          console.log('使用click()方法点击成功');
+          return true;
+        } catch (clickError) {
+          console.log('click()方法失败，尝试备用方法');
+          try {
+            // 尝试使用MouseEvent
+            const event = new MouseEvent('click', {
+              view: window,
+              bubbles: true,
+              cancelable: true
+            });
+            newestOption.dispatchEvent(event);
+            console.log('使用MouseEvent点击成功');
+            return true;
+          } catch (eventError) {
+            console.log('所有点击方法都失败');
+            return false;
+          }
+        }
       }
       
-      // 如果没有找到精确匹配，尝试模糊匹配
-      const fuzzyMatch = menuItems.find(item => {
-        return (item.textContent || '').includes('Newest');
-      });
-      
-      if (fuzzyMatch) {
-        console.log('找到模糊匹配的Newest选项，准备点击');
-        fuzzyMatch.click();
-        return true;
-      }
-      
+      console.log('未找到Newest选项');
       return false;
     });
     
@@ -1123,14 +1184,22 @@ async function autoLikeVideos(page) {
       console.warn('⚠️ 未找到点赞栏目按钮，将直接尝试点赞');
     }
     
+    // 创建截图保存目录
+    const fs = require('fs');
+    const screenshotDir = './screenshots';
+    if (!fs.existsSync(screenshotDir)) {
+      fs.mkdirSync(screenshotDir, { recursive: true });
+      console.log(`✓ 已创建截图保存目录: ${screenshotDir}`);
+    }
+    
     // 初始化计数器
     let successLikeCount = 0;  // 成功点赞计数
     let consecutiveFailCount = 0;  // 连续失败计数
     let scrollCount = 0;  // 滚动次数计数
     
-    // 截图保存初始状态
+    // 截图保存初始状态在本地目录
     await page.screenshot({ path: `auto-like-initial.png`, fullPage: true });
-    console.log('✓ 已保存初始状态截图到 auto-like-initial.png');
+    console.log(`✓ 已保存初始状态截图到 auto-like-initial.png`);
     
     // 开始循环查找并点赞
     while (successLikeCount < 50 && consecutiveFailCount < 5) {
@@ -1203,8 +1272,8 @@ async function autoLikeVideos(page) {
           
           // 每10次点赞保存一次截图
           if (successLikeCount % 10 === 0) {
-            await page.screenshot({ path: `auto-like-success-${successLikeCount}.png`, fullPage: false });
-            console.log(`✓ 已保存第 ${successLikeCount} 次点赞成功截图`);
+            await page.screenshot({ path: `${screenshotDir}/auto-like-success-${successLikeCount}.png`, fullPage: false });
+            console.log(`✓ 已保存第 ${successLikeCount} 次点赞成功截图到 ${screenshotDir}`);
           }
           
           // 延迟1-2秒
@@ -1220,50 +1289,38 @@ async function autoLikeVideos(page) {
         console.log('未找到可点击的👍按钮，准备滚动页面...');
         
         // 滚动页面 - 使用更可靠的滚动方法
-        try {
-          // 方法1: 使用页面的滚动方法
-          await page.evaluate(() => {
-            // 使用更大的滚动距离，确保页面有明显变化
-            window.scrollBy(0, window.innerHeight * 0.9);
-            
-            // 记录滚动前后的位置，用于验证滚动是否有效
-            return {
-              beforeScroll: window.pageYOffset || document.documentElement.scrollTop,
-              afterScroll: window.pageYOffset || document.documentElement.scrollTop
-            };
-          }).then(result => {
-            console.log(`滚动前位置: ${result.beforeScroll}px, 滚动后位置: ${result.afterScroll}px`);
-            if (result.afterScroll <= result.beforeScroll) {
-              throw new Error('页面没有有效滚动，尝试备用方法');
-            }
-          });
-        } catch (scrollError) {
-          console.log('使用备用滚动方法...');
-          // 方法2: 使用键盘按键模拟滚动
-          await page.keyboard.press('PageDown');
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          // 方法3: 尝试点击页面底部元素
-          await page.evaluate(() => {
-            // 查找页面底部的元素并尝试点击或聚焦
-            const elements = Array.from(document.querySelectorAll('*'));
-            const bottomElements = elements
-              .filter(el => {
-                const rect = el.getBoundingClientRect();
-                return rect.top > window.innerHeight * 0.8 && rect.bottom <= window.innerHeight * 1.2;
-              })
-              .sort((a, b) => {
-                const rectA = a.getBoundingClientRect();
-                const rectB = b.getBoundingClientRect();
-                return rectB.top - rectA.top; // 按从下到上的顺序排序
-              });
-            
-            if (bottomElements.length > 0) {
-              bottomElements[0].scrollIntoView({ behavior: 'smooth', block: 'end' });
-              return true;
-            }
-            return false;
-          });
-        }
+        console.log('使用有效的滚动方法...');
+        
+        // 方法1: 使用键盘按键模拟滚动 - 连续按两次PageDown键以获得更大的滚动距离
+        await page.keyboard.press('PageDown');
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await page.keyboard.press('PageDown');
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // 方法2: 使用scrollIntoView滚动到更远的元素
+        await page.evaluate(() => {
+          // 查找页面中间偏下的元素
+          const elements = Array.from(document.querySelectorAll('*'));
+          const middleElements = elements
+            .filter(el => {
+              const rect = el.getBoundingClientRect();
+              // 查找位于视口底部以下的元素，确保滚动距离足够大
+              return rect.top > window.innerHeight * 1.5 && rect.top < window.innerHeight * 3;
+            })
+            .sort((a, b) => {
+              const rectA = a.getBoundingClientRect();
+              const rectB = b.getBoundingClientRect();
+              return rectB.top - rectA.top; // 按从下到上的顺序排序
+            });
+          
+          if (middleElements.length > 0) {
+            // 滚动到找到的元素，使用block: 'center'确保元素在视口中间
+            middleElements[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            console.log('成功滚动到远处元素');
+            return true;
+          }
+          return false;
+        });
         
         scrollCount++;
         console.log(`✓ 已滚动页面 ${scrollCount} 次`);
@@ -1273,8 +1330,8 @@ async function autoLikeVideos(page) {
         await new Promise(resolve => setTimeout(resolve, 10000));
         
         // 每次滚动都保存截图，以便验证滚动是否有效
-        await page.screenshot({ path: `auto-like-scroll-${scrollCount}.png`, fullPage: false });
-        console.log(`✓ 已保存第 ${scrollCount} 次滚动截图`);
+        await page.screenshot({ path: `${screenshotDir}/auto-like-scroll-${scrollCount}.png`, fullPage: false });
+        console.log(`✓ 已保存第 ${scrollCount} 次滚动截图到 ${screenshotDir}`);
         
         // 如果滚动3次还未找到可点击按钮，增加连续失败计数
         if (scrollCount % 3 === 0 && scrollCount > 0) {
@@ -1284,9 +1341,9 @@ async function autoLikeVideos(page) {
       }
     }
     
-    // 保存最终状态截图
-    await page.screenshot({ path: 'auto-like-final.png', fullPage: true });
-    console.log('✓ 已保存最终状态截图到 auto-like-final.png');
+    // 保存最终状态截图本地目录
+    await page.screenshot({ path: `auto-like-final.png`, fullPage: true });
+    console.log(`✓ 已保存最终状态截图到 auto-like-final.png`);
     
     // 输出结果统计
     if (successLikeCount >= 50) {
@@ -1306,10 +1363,10 @@ async function autoLikeVideos(page) {
   } catch (error) {
     console.error('❌ 自动点赞视频过程中出错:', error.message);
     
-    // 尝试截图保存错误状态
+    // 尝试截图保存错误状态在本地目录
     try {
-      await page.screenshot({ path: 'auto-like-error.png', fullPage: true });
-      console.log('已保存错误截图到 auto-like-error.png');
+      await page.screenshot({ path: `auto-like-error.png`, fullPage: true });
+      console.log(`已保存错误截图到 auto-like-error.png`);
     } catch (screenshotError) {
       console.error('保存错误截图失败:', screenshotError.message);
     }
