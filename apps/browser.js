@@ -1038,6 +1038,83 @@ async function autoLikeVideos(page) {
 }
 
 /**
+ * 读取测试记录文件
+ * @returns {Object} 测试记录对象
+ */
+function readTestRecords() {
+  try {
+    const recordsPath = path.join(__dirname, '..', 'records', 'test_records.json');
+    if (!fs.existsSync(recordsPath)) {
+      // 如果记录文件不存在，创建一个空记录
+      const emptyRecords = { records: {} };
+      fs.writeFileSync(recordsPath, JSON.stringify(emptyRecords, null, 2), 'utf8');
+      return emptyRecords;
+    }
+    
+    const recordsData = fs.readFileSync(recordsPath, 'utf8');
+    return JSON.parse(recordsData);
+  } catch (error) {
+    console.error('读取测试记录文件出错:', error.message);
+    // 返回空记录对象
+    return { records: {} };
+  }
+}
+
+/**
+ * 更新测试记录文件
+ * @param {string} email 邮箱地址
+ * @param {string} date 测试日期
+ * @param {boolean} success 测试是否成功
+ */
+function updateTestRecord(email, date, success) {
+  try {
+    const recordsPath = path.join(__dirname, '..', 'records', 'test_records.json');
+    const records = readTestRecords();
+    
+    // 更新记录
+    records.records[email] = {
+      lastTestDate: date,
+      lastTestResult: success ? 'success' : 'failed',
+      lastTestTime: new Date().toISOString()
+    };
+    
+    // 写入文件
+    fs.writeFileSync(recordsPath, JSON.stringify(records, null, 2), 'utf8');
+    console.log(`✓ 已更新测试记录: ${email} - ${date} - ${success ? '成功' : '失败'}`);
+  } catch (error) {
+    console.error('更新测试记录文件出错:', error.message);
+  }
+}
+
+/**
+ * 检查账号是否已在当天测试过
+ * @param {string} email 邮箱地址
+ * @returns {boolean} 是否已测试过
+ */
+function isTestedToday(email) {
+  try {
+    const records = readTestRecords();
+    const record = records.records[email];
+    
+    if (!record) {
+      return false; // 没有记录，表示未测试过
+    }
+    
+    // 获取当前日期（格式：YYYY-MM-DD）
+    const today = new Date().toISOString().split('T')[0];
+    
+    // 获取记录中的测试日期
+    const lastTestDate = record.lastTestDate;
+    
+    // 如果最后测试日期是今天，且测试成功，则返回true
+    return lastTestDate === today && record.lastTestResult === 'success';
+  } catch (error) {
+    console.error('检查测试记录出错:', error.message);
+    return false; // 出错时默认为未测试过
+  }
+}
+
+/**
  * 运行多账号浏览器测试流程
  * @param {Object} config 邮箱配置对象，包含邮箱列表和最大重试次数
  * @returns {Promise<void>}
@@ -1054,6 +1131,13 @@ async function runMultiAccountTest(config) {
   if (!fs.existsSync(resultsDir)) {
     fs.mkdirSync(resultsDir, { recursive: true });
     console.log(`✓ 已创建结果保存目录: ${resultsDir}`);
+  }
+  
+  // 创建记录目录
+  const recordsDir = path.join(__dirname, '..', 'records');
+  if (!fs.existsSync(recordsDir)) {
+    fs.mkdirSync(recordsDir, { recursive: true });
+    console.log(`✓ 已创建记录保存目录: ${recordsDir}`);
   }
   
   // 创建结果日志文件
@@ -1074,6 +1158,9 @@ async function runMultiAccountTest(config) {
   const mailUsername = 'slot@stonecoks.vip';
   const mailPassword = 'ww..MM123456789';
   
+  // 获取当前日期（格式：YYYY-MM-DD）
+  const today = new Date().toISOString().split('T')[0];
+  
   // 循环处理每个邮箱账号
   for (let i = 0; i < config.emails.length; i++) {
     const emailAccount = config.emails[i];
@@ -1081,6 +1168,31 @@ async function runMultiAccountTest(config) {
     const description = emailAccount.description || `账号${i+1}`;
     
     console.log(`\n=============================================`);
+    console.log(`准备测试账号 ${i+1}/${config.emails.length}: ${email} (${description})`);
+    console.log(`=============================================`);
+    
+    // 检查账号是否已在当天测试过
+    if (isTestedToday(email)) {
+      console.log(`⏭️ 账号 ${email} 今天(${today})已经测试过，跳过测试`);
+      
+      // 记录跳过的账号
+      testResults.skippedCount++;
+      testResults.accountResults.push({
+        email: email,
+        description: description,
+        finalStatus: 'skipped',
+        skipReason: '当日已测试过',
+        skipDate: today
+      });
+      
+      // 保存当前结果到日志文件
+      fs.writeFileSync(logFilePath, JSON.stringify(testResults, null, 2), 'utf8');
+      console.log(`✓ 已保存测试结果到: ${logFilePath}`);
+      
+      // 继续处理下一个账号
+      continue;
+    }
+    
     console.log(`开始测试账号 ${i+1}/${config.emails.length}: ${email} (${description})`);
     console.log(`=============================================`);
     
@@ -1178,11 +1290,16 @@ async function runMultiAccountTest(config) {
         attemptResult.endTime = new Date().toISOString();
         accountResult.attempts.push(attemptResult);
         
-        // 如果成功，跳出循环
+        // 如果成功，更新测试记录并跳出循环
         if (success) {
           console.log(`✓ 账号 ${email} 测试成功！`);
           accountResult.finalStatus = 'success';
           testResults.successCount++;
+          
+          // 更新测试记录
+          updateTestRecord(email, today, true);
+          console.log(`✓ 已更新 ${email} 的测试记录`);
+          
           break;
         }
         
