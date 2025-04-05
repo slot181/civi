@@ -878,11 +878,14 @@ async function autoLikeVideos(page) {
         return likeButtons.map(button => {
           // 检查按钮是否已点击过（通过class判断）
           const isClicked = button.classList.contains('mantine-1rk94m8');
+          // 检查按钮是否被禁用
+          const isDisabled = button.hasAttribute('disabled') || button.getAttribute('data-disabled') === 'true';
           // 获取按钮在页面中的位置
           const rect = button.getBoundingClientRect();
           
           return {
             isClicked,
+            isDisabled,
             isVisible: rect.top >= 0 && rect.top <= window.innerHeight,
             top: rect.top,
             text: button.textContent
@@ -904,10 +907,11 @@ async function autoLikeVideos(page) {
           // 查找所有按钮
           const buttons = Array.from(document.querySelectorAll('button[data-button="true"]'));
           
-          // 过滤出包含👍表情且未点击过的按钮
+          // 过滤出包含👍表情、未点击过且未禁用的按钮
           const likeButtons = buttons.filter(button => {
             const text = button.textContent || '';
-            return text.includes('👍') && !button.classList.contains('mantine-1rk94m8');
+            const isDisabled = button.hasAttribute('disabled') || button.getAttribute('data-disabled') === 'true';
+            return text.includes('👍') && !button.classList.contains('mantine-1rk94m8') && !isDisabled;
           });
           
           // 找到第一个可见的按钮
