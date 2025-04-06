@@ -895,8 +895,8 @@ async function autoLikeVideos(page) {
       
       console.log(`找到 ${likeButtons.length} 个👍按钮, 其中 ${likeButtons.filter(b => b.isClicked).length} 个已点击过`);
       
-      // 查找第一个可见且未点击的按钮
-      const buttonToClick = likeButtons.find(button => button.isVisible && !button.isClicked);
+      // 查找第一个可见、未点击且未禁用的按钮
+      const buttonToClick = likeButtons.find(button => button.isVisible && !button.isClicked && !button.isDisabled);
       
       if (buttonToClick) {
         // 找到可点击的按钮
