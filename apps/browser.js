@@ -863,8 +863,8 @@ async function autoLikeVideos(page) {
     while (successLikeCount < 50 && consecutiveFailCount < 5) {
       console.log(`\n当前状态: 成功点赞 ${successLikeCount} 次, 连续失败 ${consecutiveFailCount} 次, 滚动 ${scrollCount} 次`);
       
-      // 查找所有👍按钮
-      const likeButtons = await page.evaluate(() => {
+      // 直接在一次evaluate调用中查找并点击符合条件的按钮
+      const buttonInfo = await page.evaluate(() => {
         // 查找所有按钮
         const buttons = Array.from(document.querySelectorAll('button[data-button="true"]'));
         
@@ -874,91 +874,86 @@ async function autoLikeVideos(page) {
           return text.includes('👍');
         });
         
-        // 返回按钮信息
-        return likeButtons.map(button => {
-          // 检查按钮是否已点击过（通过class判断）
+        // 统计信息
+        const totalButtons = likeButtons.length;
+        const clickedButtons = likeButtons.filter(button =>
+          button.classList.contains('mantine-1rk94m8')
+        ).length;
+        
+        // 过滤出可点击的按钮（可见、未点击过且未禁用）
+        const clickableButtons = likeButtons.filter(button => {
+          // 检查按钮是否已点击过
           const isClicked = button.classList.contains('mantine-1rk94m8');
           // 检查按钮是否被禁用
           const isDisabled = button.hasAttribute('disabled') || button.getAttribute('data-disabled') === 'true';
-          // 获取按钮在页面中的位置
+          // 检查按钮是否在可视区域内
           const rect = button.getBoundingClientRect();
+          const isVisible = rect.top >= 0 && rect.top <= window.innerHeight;
           
-          return {
-            isClicked,
-            isDisabled,
-            isVisible: rect.top >= 0 && rect.top <= window.innerHeight,
-            top: rect.top,
-            text: button.textContent
-          };
+          return isVisible && !isClicked && !isDisabled;
         });
+        
+        // 如果找到可点击的按钮，点击第一个
+        if (clickableButtons.length > 0) {
+          const buttonToClick = clickableButtons[0];
+          const buttonText = buttonToClick.textContent;
+          buttonToClick.click();
+          return {
+            success: true,
+            totalButtons,
+            clickedButtons,
+            buttonText
+          };
+        }
+        
+        return {
+          success: false,
+          totalButtons,
+          clickedButtons
+        };
       });
       
-      console.log(`找到 ${likeButtons.length} 个👍按钮, 其中 ${likeButtons.filter(b => b.isClicked).length} 个已点击过`);
+      // 在Node.js环境中打印日志
+      console.log(`找到 ${buttonInfo.totalButtons} 个👍按钮, 其中 ${buttonInfo.clickedButtons} 个已点击过`);
       
-      // 查找第一个可见、未点击且未禁用的按钮
-      const buttonToClick = likeButtons.find(button => button.isVisible && !button.isClicked && !button.isDisabled);
-      
-      if (buttonToClick) {
-        // 找到可点击的按钮
-        console.log(`找到可点击的👍按钮: ${buttonToClick.text}`);
+      const clickResult = buttonInfo.success;
+      if (clickResult) {
+        console.log(`找到可点击的👍按钮: ${buttonInfo.buttonText}`);
+        console.log('✓ 成功点击👍按钮');
+        successLikeCount++;
+        consecutiveFailCount = 0;  // 重置连续失败计数
         
-        // 点击按钮
-        const clickResult = await page.evaluate(() => {
-          // 查找所有按钮
-          const buttons = Array.from(document.querySelectorAll('button[data-button="true"]'));
-          
-          // 过滤出包含👍表情、未点击过且未禁用的按钮
-          const likeButtons = buttons.filter(button => {
-            const text = button.textContent || '';
-            const isDisabled = button.hasAttribute('disabled') || button.getAttribute('data-disabled') === 'true';
-            return text.includes('👍') && !button.classList.contains('mantine-1rk94m8') && !isDisabled;
-          });
-          
-          // 找到第一个可见的按钮
-          for (const button of likeButtons) {
-            const rect = button.getBoundingClientRect();
-            if (rect.top >= 0 && rect.top <= window.innerHeight) {
-              // 点击按钮
-              button.click();
-              return true;
-            }
-          }
-          
-          return false;
-        });
-        
-        if (clickResult) {
-          console.log('✓ 成功点击👍按钮');
-          successLikeCount++;
-          consecutiveFailCount = 0;  // 重置连续失败计数
-          
-          // 每10次点赞保存一次截图
-          if (successLikeCount % 10 === 0) {
-            await page.screenshot({ path: `${screenshotDir}/auto-like-success-${successLikeCount}.png`, fullPage: false });
-            console.log(`✓ 已保存第 ${successLikeCount} 次点赞成功截图到 ${screenshotDir}`);
-          }
-          
-          // 延迟1-2秒
-          const delay = Math.floor(Math.random() * 1000) + 1000;  // 1000-2000毫秒
-          console.log(`等待 ${delay}ms 后继续...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        } else {
-          console.log('❌ 点击👍按钮失败');
-          consecutiveFailCount++;
+        // 每10次点赞保存一次截图
+        if (successLikeCount % 10 === 0) {
+          await page.screenshot({ path: `${screenshotDir}/auto-like-success-${successLikeCount}.png`, fullPage: false });
+          console.log(`✓ 已保存第 ${successLikeCount} 次点赞成功截图到 ${screenshotDir}`);
         }
+        
+        // 延迟1-2秒
+        const delay = Math.floor(Math.random() * 1000) + 1000;  // 1000-2000毫秒
+        console.log(`等待 ${delay}ms 后继续...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       } else {
+        console.log('未找到可点击的👍按钮');
+        console.log('❌ 点击👍按钮失败');
+        consecutiveFailCount++;
         // 没有找到可点击的按钮，需要滚动页面
         console.log('未找到可点击的👍按钮，准备滚动页面...');
         
         // 滚动页面 - 使用更可靠的滚动方法
         console.log('使用有效的滚动方法...');
         
-        // 方法1: 使用键盘按键模拟滚动 - 连续按两次PageDown键以获得更大的滚动距离
+        // 方法1: 使用键盘按键模拟滚动 - 连续按四次PageDown键以获得更大的滚动距离
         await page.keyboard.press('PageDown');
         await new Promise(resolve => setTimeout(resolve, 500));
         await page.keyboard.press('PageDown');
         await new Promise(resolve => setTimeout(resolve, 500));
-        
+        await page.keyboard.press('PageDown');
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await page.keyboard.press('PageDown');
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+
         // 方法2: 使用scrollIntoView滚动到更远的元素
         await page.evaluate(() => {
           // 查找页面中间偏下的元素
