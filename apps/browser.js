@@ -990,8 +990,8 @@ async function autoLikeVideos(page) {
         await page.screenshot({ path: `${screenshotDir}/auto-like-scroll-${scrollCount}.png`, fullPage: false });
         console.log(`✓ 已保存第 ${scrollCount} 次滚动截图到 ${screenshotDir}`);
         
-        // 如果滚动3次还未找到可点击按钮，增加连续失败计数
-        if (scrollCount % 3 === 0 && scrollCount > 0) {
+        // 如果滚动10次还未找到可点击按钮，增加连续失败计数
+        if (scrollCount % 10 === 0 && scrollCount > 0) {
           consecutiveFailCount++;
           console.log(`警告: 已滚动 ${scrollCount} 次但未找到可点击按钮，增加失败计数到 ${consecutiveFailCount}`);
         }
